@@ -1,22 +1,24 @@
-// ====================================================================
-//                 🐺 HUNTERS BOT DISCORD 🐺
-// ====================================================================
-// Versão: 1.1.0
-// Discord.js v14
-// ====================================================================
-
 const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   ActivityType
 } = require('discord.js');
 
+const fs = require('fs');
+const path = require('path');
+
 require('dotenv').config();
 
-// ====================================================================
-// CLIENTE
-// ====================================================================
+// ============================================================
+// CLIENT
+// ============================================================
 
 const client = new Client({
   intents: [
@@ -26,141 +28,144 @@ const client = new Client({
   ]
 });
 
-// ====================================================================
-// CONFIGURAÇÕES
-// ====================================================================
-
-const PREFIX = '!';
+const PREFIX = process.env.PREFIX || '!';
 
 const KIT_COST = 3760;
 
-// ====================================================================
-// BANCO DE DADOS
-// ====================================================================
+const DB_PATH = path.join(
+  __dirname,
+  'database',
+  'database.json'
+);
+
+// ============================================================
+// ITENS
+// ============================================================
 
 const itensDb = {
   ak47: {
     name: 'AK-47',
     steel: 2700,
-    value: 35000,
-    category: 'Armas'
+    value: 35000
   },
 
   awp: {
     name: 'AWP',
     steel: 3000,
-    value: 65000,
-    category: 'Armas'
+    value: 65000
   },
 
   m16: {
     name: 'M16',
     steel: 2700,
-    value: 35000,
-    category: 'Armas'
+    value: 35000
   },
 
   sawedoff: {
     name: 'Sawed-Off Shotgun',
     steel: 1200,
-    value: 20000,
-    category: 'Armas'
+    value: 20000
   },
 
   glock17: {
     name: 'Glock 17',
     steel: 120,
-    value: 5000,
-    category: 'Armas'
+    value: 5000
   },
 
   tec9: {
     name: 'TEC-9',
     steel: 900,
-    value: 15000,
-    category: 'Armas'
+    value: 15000
   },
 
   taser: {
     name: 'Taser',
     steel: 700,
-    value: 10000,
-    category: 'Armas'
+    value: 10000
   },
 
-  box_pistola: {
-    name: 'Box M. Pistola',
-    steel: 40,
-    value: 2000,
-    category: 'Caixas de Munição'
-  },
-
-  box_sub: {
-    name: 'Box M. Sub',
-    steel: 80,
-    value: 3000,
-    category: 'Caixas de Munição'
-  },
-
-  box_escopeta: {
-    name: 'Box M. Escopeta',
-    steel: 100,
-    value: 4000,
-    category: 'Caixas de Munição'
-  },
-
-  box_556: {
+  box556: {
     name: 'Box M. 5.56',
     steel: 120,
-    value: 5000,
-    category: 'Caixas de Munição'
+    value: 5000
   },
 
-  box_308: {
+  box308: {
     name: 'Box M. .308',
     steel: 200,
-    value: 5000,
-    category: 'Caixas de Munição'
-  },
-
-  silenciador: {
-    name: 'Silenciador',
-    steel: 20,
-    value: 2000,
-    category: 'Acessórios'
-  },
-
-  carregador_est: {
-    name: 'Carregador Est.',
-    steel: 25,
-    value: 3000,
-    category: 'Acessórios'
-  },
-
-  grip: {
-    name: 'Grip',
-    steel: 30,
-    value: 3000,
-    category: 'Acessórios'
-  },
-
-  lanterna: {
-    name: 'Lanterna',
-    steel: 30,
-    value: 2000,
-    category: 'Acessórios'
+    value: 5000
   }
 };
 
-// ====================================================================
-// FUNÇÕES
-// ====================================================================
+// ============================================================
+// DATABASE
+// ============================================================
 
-function formatarNumero(numero) {
-  return numero.toLocaleString('pt-BR');
+function verificarDatabase() {
+  const pasta = path.dirname(DB_PATH);
+
+  if (!fs.existsSync(pasta)) {
+    fs.mkdirSync(pasta, {
+      recursive: true
+    });
+  }
+
+  if (!fs.existsSync(DB_PATH)) {
+    fs.writeFileSync(
+      DB_PATH,
+      JSON.stringify(
+        {
+          estoque: 0,
+          vendas: []
+        },
+        null,
+        2
+      )
+    );
+  }
 }
 
-function normalizarTexto(texto) {
+function carregarDb() {
+  verificarDatabase();
+
+  try {
+    return JSON.parse(
+      fs.readFileSync(DB_PATH, 'utf8')
+    );
+  } catch (error) {
+    console.error(
+      '❌ Erro ao carregar database:',
+      error
+    );
+
+    return {
+      estoque: 0,
+      vendas: []
+    };
+  }
+}
+
+function salvarDb(db) {
+  fs.writeFileSync(
+    DB_PATH,
+    JSON.stringify(db, null, 2)
+  );
+}
+
+// ============================================================
+// FUNÇÕES
+// ============================================================
+
+function numero(valor) {
+  return Number(valor).toLocaleString('pt-BR');
+}
+
+function dinheiro(valor) {
+  return `R$ ${numero(valor)}`;
+}
+
+function normalizar(texto) {
   return texto
     .toLowerCase()
     .normalize('NFD')
@@ -169,18 +174,13 @@ function normalizarTexto(texto) {
 }
 
 function buscarItem(nome) {
-  const busca = normalizarTexto(nome);
-
-  if (!busca) return null;
+  const busca = normalizar(nome);
 
   for (const [key, item] of Object.entries(itensDb)) {
-    const chaveNormalizada = normalizarTexto(key);
-    const nomeNormalizado = normalizarTexto(item.name);
-
     if (
-      chaveNormalizada === busca ||
-      nomeNormalizado === busca ||
-      nomeNormalizado.includes(busca)
+      normalizar(key) === busca ||
+      normalizar(item.name) === busca ||
+      normalizar(item.name).includes(busca)
     ) {
       return item;
     }
@@ -189,31 +189,140 @@ function buscarItem(nome) {
   return null;
 }
 
-// ====================================================================
-// BOT ONLINE
-// ====================================================================
+// ============================================================
+// PAINEL
+// ============================================================
+
+function criarPainel() {
+  const db = carregarDb();
+
+  const kits = Math.floor(
+    db.estoque / KIT_COST
+  );
+
+  const totalVendas = db.vendas.reduce(
+    (total, venda) => total + venda.total,
+    0
+  );
+
+  const embed = new EmbedBuilder()
+    .setTitle('🐺 HUNTERS BOT — PAINEL CENTRAL')
+    .setColor('#8B5CF6')
+    .setDescription(
+      '## 🐺 SISTEMA DE GESTÃO HUNTERS\n' +
+      'Controle de estoque, produção e vendas.'
+    )
+    .addFields(
+      {
+        name: '🛠️ Estoque de Aço',
+        value: `**${numero(db.estoque)} Aços**`,
+        inline: true
+      },
+      {
+        name: '🎁 Capacidade de Kits',
+        value: `**${numero(kits)} Kits**`,
+        inline: true
+      },
+      {
+        name: '💰 Total em Vendas',
+        value: `**${dinheiro(totalVendas)}**`,
+        inline: true
+      },
+      {
+        name: '📜 Vendas Registradas',
+        value: `**${numero(db.vendas.length)} vendas**`,
+        inline: true
+      }
+    )
+    .setFooter({
+      text: 'HUNTERS BOT v2.0 🐺'
+    })
+    .setTimestamp();
+
+  const linha1 = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('estoque')
+        .setLabel('Estoque')
+        .setEmoji('📦')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('adicionar_aco')
+        .setLabel('Adicionar Aço')
+        .setEmoji('➕')
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId('retirar_aco')
+        .setLabel('Retirar Aço')
+        .setEmoji('➖')
+        .setStyle(ButtonStyle.Danger),
+
+      new ButtonBuilder()
+        .setCustomId('kits')
+        .setLabel('Kits')
+        .setEmoji('🎁')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+  const linha2 = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('registrar_venda')
+        .setLabel('Registrar Venda')
+        .setEmoji('💰')
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId('ranking')
+        .setLabel('Ranking')
+        .setEmoji('🏆')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('historico')
+        .setLabel('Histórico')
+        .setEmoji('📜')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+  return {
+    embeds: [embed],
+    components: [linha1, linha2]
+  };
+}
+
+// ============================================================
+// READY
+// ============================================================
 
 client.once('ready', () => {
-  console.log('==========================================');
-  console.log(`🐺 HUNTERS BOT ONLINE`);
-  console.log(`🤖 Logado como: ${client.user.tag}`);
-  console.log('==========================================');
+  verificarDatabase();
 
-  client.user.setActivity('Calculadora Hunters | !ajuda', {
-    type: ActivityType.Listening
-  });
+  console.log('===================================');
+  console.log('🐺 HUNTERS BOT v2.0 ONLINE');
+  console.log(`🤖 ${client.user.tag}`);
+  console.log('===================================');
+
+  client.user.setActivity(
+    'Gestão HUNTERS 🐺',
+    {
+      type: ActivityType.Watching
+    }
+  );
 });
 
-// ====================================================================
+// ============================================================
 // COMANDOS
-// ====================================================================
+// ============================================================
 
-client.on('messageCreate', async (message) => {
+client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  if (!message.guild) return;
-
-  if (!message.content.startsWith(PREFIX)) return;
+  if (!message.content.startsWith(PREFIX)) {
+    return;
+  }
 
   const args = message.content
     .slice(PREFIX.length)
@@ -222,378 +331,569 @@ client.on('messageCreate', async (message) => {
 
   const command = args.shift()?.toLowerCase();
 
-  if (!command) return;
-
-  // ================================================================
-  // AJUDA
-  // ================================================================
-
-  if (command === 'ajuda' || command === 'help') {
-    const embed = new EmbedBuilder()
-      .setTitle('🐺 CENTRAL DE AJUDA — HUNTERS BOT')
-      .setColor('#8B5CF6')
-      .setDescription(
-        'Calculadora oficial de produção e vendas da **HUNTERS**.'
-      )
-      .addFields(
-        {
-          name: '🎁 !kit [aço]',
-          value:
-            'Calcula quantos Kits da Meta podem ser fabricados.\n' +
-            '`!kit 15000`'
-        },
-        {
-          name: '🛒 !venda [item] [qtd]',
-          value:
-            'Calcula uma venda e divide 70/30.\n' +
-            '`!venda AK-47 5`'
-        },
-        {
-          name: '🏷️ !venda [item] [qtd] d',
-          value:
-            'Aplica 15% de desconto.\n' +
-            '`!venda AK-47 5 d`'
-        },
-        {
-          name: '🛠️ !producao [aço]',
-          value:
-            'Mostra a capacidade de fabricação.\n' +
-            '`!producao 20000`'
-        },
-        {
-          name: '📢 !estoque [aço]',
-          value:
-            'Divide o estoque em 60% Clã e 40% Venda.\n' +
-            '`!estoque 50000`'
-        }
-      )
-      .setFooter({
-        text: 'HUNTERS Organization 🐺'
-      })
-      .setTimestamp();
-
-    return message.reply({
-      embeds: [embed]
-    });
-  }
-
-  // ================================================================
-  // KIT
-  // ================================================================
-
-  if (command === 'kit') {
-    const aco = Number(args[0]);
-
-    if (!Number.isInteger(aco) || aco < 0) {
-      return message.reply(
-        '❌ Use: `!kit [quantidade de aço]`\n' +
-        'Exemplo: `!kit 15000`'
-      );
-    }
-
-    const kits = Math.floor(aco / KIT_COST);
-    const sobra = aco % KIT_COST;
-
-    const embed = new EmbedBuilder()
-      .setTitle('🎁 CALCULADORA DE KIT — HUNTERS')
-      .setColor('#8B5CF6')
-      .setDescription(
-        `🛠️ **Aço disponível:** ${formatarNumero(aco)}\n\n` +
-        `## 🎁 KIT DA META\n` +
-        `⚡ 1x Taser\n` +
-        `🔫 1x AK-47\n` +
-        `📦 3x Box M. 5.56\n\n` +
-        `💎 **Custo por Kit:** ${formatarNumero(KIT_COST)} Aços`
-      )
-      .addFields(
-        {
-          name: '✅ Kits completos',
-          value: `**${kits} Kit${kits !== 1 ? 's' : ''}**`,
-          inline: true
-        },
-        {
-          name: '📦 Aço restante',
-          value: `**${formatarNumero(sobra)} Aços**`,
-          inline: true
-        }
-      )
-      .setFooter({
-        text: 'Hunters Bot 🐺'
-      })
-      .setTimestamp();
-
-    return message.reply({
-      embeds: [embed]
-    });
-  }
-
-  // ================================================================
-  // VENDA
-  // ================================================================
-
-  if (command === 'venda') {
-    if (args.length < 2) {
-      return message.reply(
-        '❌ **Sintaxe incorreta!**\n\n' +
-        '`!venda AK-47 10`\n' +
-        '`!venda AK-47 10 d`'
-      );
-    }
-
-    let applyDiscount = false;
-
-    const ultimoArgumento = args[args.length - 1]?.toLowerCase();
-
-    if (
-      ultimoArgumento === 'd' ||
-      ultimoArgumento === 'desc' ||
-      ultimoArgumento === 'desconto'
-    ) {
-      applyDiscount = true;
-      args.pop();
-    }
-
-    const qty = Number(args.pop());
-
-    if (!Number.isInteger(qty) || qty <= 0) {
-      return message.reply(
-        '❌ Informe uma quantidade válida.\n' +
-        'Exemplo: `!venda AK-47 10`'
-      );
-    }
-
-    const itemName = args.join(' ');
-
-    if (!itemName) {
-      return message.reply(
-        '❌ Informe o nome do item.'
-      );
-    }
-
-    const item = buscarItem(itemName);
-
-    if (!item) {
-      return message.reply(
-        `❌ Item \`${itemName}\` não encontrado.\n\n` +
-        'Exemplo: `!venda AK-47 10`'
-      );
-    }
-
-    const desconto = applyDiscount ? 0.15 : 0;
-
-    const valorUnitario = Math.round(
-      item.value * (1 - desconto)
+  if (command === 'painel') {
+    return message.channel.send(
+      criarPainel()
     );
-
-    const valorTotal = valorUnitario * qty;
-
-    const caixaCla = Math.round(valorTotal * 0.70);
-
-    const membro = valorTotal - caixaCla;
-
-    const acoNecessario = item.steel * qty;
-
-    const embed = new EmbedBuilder()
-      .setTitle(
-        `🐺 VENDA HUNTERS — ${item.name.toUpperCase()}`
-      )
-      .setColor(
-        applyDiscount ? '#F59E0B' : '#F472B6'
-      )
-      .addFields(
-        {
-          name: '🔫 Item',
-          value: item.name,
-          inline: true
-        },
-        {
-          name: '📦 Quantidade',
-          value: `${qty} unidade(s)`,
-          inline: true
-        },
-        {
-          name: '🛠️ Aço necessário',
-          value: `${formatarNumero(acoNecessario)} Aços`,
-          inline: true
-        },
-        {
-          name: '💵 Valor unitário',
-          value: `R$ ${formatarNumero(valorUnitario)}`,
-          inline: true
-        },
-        {
-          name: '💰 Valor total',
-          value: `**R$ ${formatarNumero(valorTotal)}**`,
-          inline: true
-        },
-        {
-          name: '🏷️ Desconto',
-          value: applyDiscount ? '**15% aplicado**' : 'Sem desconto',
-          inline: true
-        },
-        {
-          name: '🏦 Caixa do Clã — 70%',
-          value: `**R$ ${formatarNumero(caixaCla)}**`,
-          inline: true
-        },
-        {
-          name: '💵 Membro — 30%',
-          value: `**R$ ${formatarNumero(membro)}**`,
-          inline: true
-        }
-      )
-      .setFooter({
-        text: 'HUNTERS Vendas 🐺'
-      })
-      .setTimestamp();
-
-    return message.reply({
-      embeds: [embed]
-    });
   }
-
-  // ================================================================
-  // PRODUÇÃO
-  // ================================================================
-
-  if (command === 'producao') {
-    const aco = Number(args[0]);
-
-    if (!Number.isInteger(aco) || aco < 0) {
-      return message.reply(
-        '❌ Use: `!producao [aço]`\n' +
-        'Exemplo: `!producao 20000`'
-      );
-    }
-
-    const fields = [];
-
-    for (const item of Object.values(itensDb)) {
-      if (
-        item.category !== 'Armas' &&
-        item.category !== 'Caixas de Munição'
-      ) {
-        continue;
-      }
-
-      const quantidade = Math.floor(aco / item.steel);
-
-      if (quantidade <= 0) continue;
-
-      const sobra = aco % item.steel;
-
-      fields.push({
-        name: `🔹 ${item.name}`,
-        value:
-          `**${formatarNumero(quantidade)} unidade(s)**\n` +
-          `🛠️ ${formatarNumero(item.steel)} aço/un\n` +
-          `📦 Sobra: ${formatarNumero(sobra)}`,
-        inline: true
-      });
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle('🛠️ PRODUÇÃO COM AÇO — HUNTERS')
-      .setColor('#34D399')
-      .setDescription(
-        `💎 Estoque analisado: **${formatarNumero(aco)} Aços**\n\n` +
-        'Possibilidades individuais de fabricação:'
-      );
-
-    if (fields.length > 0) {
-      embed.addFields(fields.slice(0, 25));
-    } else {
-      embed.addFields({
-        name: '❌ Produção indisponível',
-        value: 'A quantidade de aço não é suficiente.'
-      });
-    }
-
-    embed
-      .setFooter({
-        text: 'HUNTERS Armaria Ativa 🐺'
-      })
-      .setTimestamp();
-
-    return message.reply({
-      embeds: [embed]
-    });
-  }
-
-  // ================================================================
-  // ESTOQUE
-  // ================================================================
 
   if (command === 'estoque') {
-    const totalAco = Number(args[0]);
+    const db = carregarDb();
 
-    if (!Number.isInteger(totalAco) || totalAco < 0) {
-      return message.reply(
-        '❌ Use: `!estoque [quantidade de aço]`\n' +
-        'Exemplo: `!estoque 50000`'
-      );
-    }
-
-    const percentClan = 60;
-    const percentSale = 40;
-
-    const clanAco = Math.floor(
-      totalAco * (percentClan / 100)
+    return message.reply(
+      `📦 Estoque atual: **${numero(db.estoque)} Aços**`
     );
-
-    const saleAco = totalAco - clanAco;
-
-    const kits = Math.floor(clanAco / KIT_COST);
-
-    const sobra = clanAco % KIT_COST;
-
-    const embed = new EmbedBuilder()
-      .setTitle('📢 ESTOQUE ATUALIZADO — HUNTERS')
-      .setColor('#3B82F6')
-      .setDescription(
-        `💎 **Baú atual: ${formatarNumero(totalAco)} Aços!**\n\n` +
-        '🐺 Organização e produção da HUNTERS.'
-      )
-      .addFields(
-        {
-          name: '📦 60% → ESTOQUE DO CLÃ',
-          value:
-            `**${formatarNumero(clanAco)} Aços**\n` +
-            '🎁 Kits e Guerras',
-          inline: true
-        },
-        {
-          name: '💰 40% → PRODUÇÃO PARA VENDA',
-          value:
-            `**${formatarNumero(saleAco)} Aços**\n` +
-            '🔫 Produção de armas',
-          inline: true
-        },
-        {
-          name: '🎁 CAPACIDADE DE KITS',
-          value:
-            `**${kits} Kits completos**\n` +
-            `📦 Sobra: ${formatarNumero(sobra)} Aços`,
-          inline: false
-        }
-      )
-      .setFooter({
-        text: 'HUNTERS 🐺 Sempre Unidos'
-      })
-      .setTimestamp();
-
-    return message.reply({
-      embeds: [embed]
-    });
   }
 });
 
-// ====================================================================
+// ============================================================
+// INTERAÇÕES
+// ============================================================
+
+client.on('interactionCreate', async interaction => {
+
+  // ==========================================================
+  // BOTÕES
+  // ==========================================================
+
+  if (interaction.isButton()) {
+
+    // ESTOQUE
+
+    if (interaction.customId === 'estoque') {
+      const db = carregarDb();
+
+      const clanAco = Math.floor(
+        db.estoque * 0.60
+      );
+
+      const vendaAco =
+        db.estoque - clanAco;
+
+      const kits = Math.floor(
+        clanAco / KIT_COST
+      );
+
+      const embed = new EmbedBuilder()
+        .setTitle('📦 ESTOQUE HUNTERS')
+        .setColor('#3B82F6')
+        .addFields(
+          {
+            name: '💎 Estoque Total',
+            value: `**${numero(db.estoque)} Aços**`
+          },
+          {
+            name: '🐺 60% Clã',
+            value: `${numero(clanAco)} Aços`,
+            inline: true
+          },
+          {
+            name: '💰 40% Venda',
+            value: `${numero(vendaAco)} Aços`,
+            inline: true
+          },
+          {
+            name: '🎁 Kits do Clã',
+            value: `**${numero(kits)} Kits completos**`
+          }
+        )
+        .setTimestamp();
+
+      return interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+      });
+    }
+
+    // ADICIONAR AÇO
+
+    if (
+      interaction.customId ===
+      'adicionar_aco'
+    ) {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_adicionar_aco')
+        .setTitle('Adicionar Aço');
+
+      const input = new TextInputBuilder()
+        .setCustomId('quantidade')
+        .setLabel('Quantidade de aço')
+        .setPlaceholder('Exemplo: 5000')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder()
+          .addComponents(input)
+      );
+
+      return interaction.showModal(modal);
+    }
+
+    // RETIRAR AÇO
+
+    if (
+      interaction.customId ===
+      'retirar_aco'
+    ) {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_retirar_aco')
+        .setTitle('Retirar Aço');
+
+      const input = new TextInputBuilder()
+        .setCustomId('quantidade')
+        .setLabel('Quantidade de aço')
+        .setPlaceholder('Exemplo: 3760')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder()
+          .addComponents(input)
+      );
+
+      return interaction.showModal(modal);
+    }
+
+    // KITS
+
+    if (interaction.customId === 'kits') {
+      const db = carregarDb();
+
+      const kits = Math.floor(
+        db.estoque / KIT_COST
+      );
+
+      const sobra =
+        db.estoque % KIT_COST;
+
+      const embed = new EmbedBuilder()
+        .setTitle('🎁 CALCULADORA DE KITS')
+        .setColor('#8B5CF6')
+        .setDescription(
+          '⚡ **1x Taser**\n' +
+          '🔫 **1x AK-47**\n' +
+          '📦 **3x Box M. 5.56**\n\n' +
+          `💎 Custo: **${numero(KIT_COST)} Aços**`
+        )
+        .addFields(
+          {
+            name: '🎁 Kits',
+            value: `**${numero(kits)} Kits completos**`,
+            inline: true
+          },
+          {
+            name: '📦 Sobra',
+            value: `**${numero(sobra)} Aços**`,
+            inline: true
+          }
+        );
+
+      return interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+      });
+    }
+
+    // REGISTRAR VENDA
+
+    if (
+      interaction.customId ===
+      'registrar_venda'
+    ) {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_venda')
+        .setTitle('Registrar Venda');
+
+      const item = new TextInputBuilder()
+        .setCustomId('item')
+        .setLabel('Item vendido')
+        .setPlaceholder('AK-47')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const quantidade = new TextInputBuilder()
+        .setCustomId('quantidade')
+        .setLabel('Quantidade')
+        .setPlaceholder('5')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const desconto = new TextInputBuilder()
+        .setCustomId('desconto')
+        .setLabel('Desconto de 15%?')
+        .setPlaceholder('sim ou nao')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(item),
+        new ActionRowBuilder().addComponents(quantidade),
+        new ActionRowBuilder().addComponents(desconto)
+      );
+
+      return interaction.showModal(modal);
+    }
+
+    // RANKING
+
+    if (interaction.customId === 'ranking') {
+      const db = carregarDb();
+
+      const ranking = {};
+
+      for (const venda of db.vendas) {
+        if (!ranking[venda.userId]) {
+          ranking[venda.userId] = {
+            total: 0,
+            vendas: 0
+          };
+        }
+
+        ranking[venda.userId].total +=
+          venda.total;
+
+        ranking[venda.userId].vendas++;
+      }
+
+      const resultado = Object.entries(ranking)
+        .sort(
+          (a, b) =>
+            b[1].total - a[1].total
+        )
+        .slice(0, 10);
+
+      let texto = '';
+
+      resultado.forEach(
+        ([userId, dados], index) => {
+          texto +=
+            `**${index + 1}º** <@${userId}>\n` +
+            `💰 ${dinheiro(dados.total)} | ` +
+            `📜 ${dados.vendas} vendas\n\n`;
+        }
+      );
+
+      if (!texto) {
+        texto = 'Nenhuma venda registrada.';
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('🏆 RANKING DE VENDAS — HUNTERS')
+        .setColor('#F59E0B')
+        .setDescription(texto)
+        .setTimestamp();
+
+      return interaction.reply({
+        embeds: [embed]
+      });
+    }
+
+    // HISTÓRICO
+
+    if (
+      interaction.customId ===
+      'historico'
+    ) {
+      const db = carregarDb();
+
+      const vendas = db.vendas
+        .slice(-10)
+        .reverse();
+
+      let texto = '';
+
+      vendas.forEach(venda => {
+        texto +=
+          `👤 <@${venda.userId}>\n` +
+          `🔫 ${venda.quantidade}x ${venda.item}\n` +
+          `💰 ${dinheiro(venda.total)}\n` +
+          `📅 ${venda.data}\n\n`;
+      });
+
+      if (!texto) {
+        texto = 'Nenhuma venda registrada.';
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('📜 ÚLTIMAS VENDAS')
+        .setColor('#EC4899')
+        .setDescription(texto)
+        .setTimestamp();
+
+      return interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+      });
+    }
+  }
+
+  // ==========================================================
+  // MODAIS
+  // ==========================================================
+
+  if (interaction.isModalSubmit()) {
+
+    // ADICIONAR AÇO
+
+    if (
+      interaction.customId ===
+      'modal_adicionar_aco'
+    ) {
+      const quantidade = Number(
+        interaction.fields.getTextInputValue(
+          'quantidade'
+        )
+      );
+
+      if (
+        !Number.isInteger(quantidade) ||
+        quantidade <= 0
+      ) {
+        return interaction.reply({
+          content:
+            '❌ Quantidade de aço inválida.',
+          ephemeral: true
+        });
+      }
+
+      const db = carregarDb();
+
+      db.estoque += quantidade;
+
+      salvarDb(db);
+
+      return interaction.reply({
+        content:
+          `✅ **${numero(quantidade)} Aços adicionados!**\n` +
+          `📦 Estoque: **${numero(db.estoque)} Aços**`,
+        ephemeral: true
+      });
+    }
+
+    // RETIRAR AÇO
+
+    if (
+      interaction.customId ===
+      'modal_retirar_aco'
+    ) {
+      const quantidade = Number(
+        interaction.fields.getTextInputValue(
+          'quantidade'
+        )
+      );
+
+      const db = carregarDb();
+
+      if (
+        !Number.isInteger(quantidade) ||
+        quantidade <= 0
+      ) {
+        return interaction.reply({
+          content: '❌ Quantidade inválida.',
+          ephemeral: true
+        });
+      }
+
+      if (quantidade > db.estoque) {
+        return interaction.reply({
+          content:
+            '❌ O estoque não possui aço suficiente.',
+          ephemeral: true
+        });
+      }
+
+      db.estoque -= quantidade;
+
+      salvarDb(db);
+
+      return interaction.reply({
+        content:
+          `➖ **${numero(quantidade)} Aços retirados.**\n` +
+          `📦 Estoque: **${numero(db.estoque)} Aços**`,
+        ephemeral: true
+      });
+    }
+
+    // VENDA
+
+    if (
+      interaction.customId ===
+      'modal_venda'
+    ) {
+      const nomeItem =
+        interaction.fields
+          .getTextInputValue('item');
+
+      const quantidade = Number(
+        interaction.fields
+          .getTextInputValue('quantidade')
+      );
+
+      const respostaDesconto =
+        interaction.fields
+          .getTextInputValue('desconto')
+          .toLowerCase();
+
+      const item = buscarItem(nomeItem);
+
+      if (!item) {
+        return interaction.reply({
+          content:
+            `❌ Item **${nomeItem}** não encontrado.`,
+          ephemeral: true
+        });
+      }
+
+      if (
+        !Number.isInteger(quantidade) ||
+        quantidade <= 0
+      ) {
+        return interaction.reply({
+          content: '❌ Quantidade inválida.',
+          ephemeral: true
+        });
+      }
+
+      const aplicarDesconto =
+        respostaDesconto === 'sim' ||
+        respostaDesconto === 's';
+
+      const valorUnitario =
+        aplicarDesconto
+          ? Math.round(item.value * 0.85)
+          : item.value;
+
+      const total =
+        valorUnitario * quantidade;
+
+      const cla =
+        Math.round(total * 0.70);
+
+      const membro =
+        total - cla;
+
+      const acoNecessario =
+        item.steel * quantidade;
+
+      const db = carregarDb();
+
+      if (acoNecessario > db.estoque) {
+        return interaction.reply({
+          content:
+            `❌ Aço insuficiente!\n\n` +
+            `🛠️ Necessário: **${numero(acoNecessario)}**\n` +
+            `📦 Estoque: **${numero(db.estoque)}**`,
+          ephemeral: true
+        });
+      }
+
+      db.estoque -= acoNecessario;
+
+      db.vendas.push({
+        id: Date.now(),
+        userId: interaction.user.id,
+        userName: interaction.user.username,
+        item: item.name,
+        quantidade,
+        valorUnitario,
+        total,
+        cla,
+        membro,
+        aco: acoNecessario,
+        desconto: aplicarDesconto,
+        data: new Date().toLocaleString(
+          'pt-BR',
+          {
+            timeZone: 'America/Sao_Paulo'
+          }
+        )
+      });
+
+      salvarDb(db);
+
+      const embed = new EmbedBuilder()
+        .setTitle('💰 VENDA REGISTRADA — HUNTERS')
+        .setColor('#22C55E')
+        .setThumbnail(
+          interaction.user.displayAvatarURL()
+        )
+        .addFields(
+          {
+            name: '👤 Vendedor',
+            value: `<@${interaction.user.id}>`
+          },
+          {
+            name: '🔫 Item',
+            value: item.name,
+            inline: true
+          },
+          {
+            name: '📦 Quantidade',
+            value: `${quantidade}x`,
+            inline: true
+          },
+          {
+            name: '🛠️ Aço utilizado',
+            value: `${numero(acoNecessario)} Aços`,
+            inline: true
+          },
+          {
+            name: '💰 Total',
+            value: `**${dinheiro(total)}**`
+          },
+          {
+            name: '🏦 Clã — 70%',
+            value: dinheiro(cla),
+            inline: true
+          },
+          {
+            name: '💵 Membro — 30%',
+            value: dinheiro(membro),
+            inline: true
+          },
+          {
+            name: '📦 Estoque restante',
+            value: `${numero(db.estoque)} Aços`
+          }
+        )
+        .setFooter({
+          text: aplicarDesconto
+            ? '🏷️ Desconto de 15% aplicado'
+            : 'HUNTERS Vendas 🐺'
+        })
+        .setTimestamp();
+
+      return interaction.reply({
+        embeds: [embed]
+      });
+    }
+  }
+});
+
+// ============================================================
+// ERROS
+// ============================================================
+
+process.on(
+  'unhandledRejection',
+  error => {
+    console.error(
+      '❌ ERRO NÃO TRATADO:',
+      error
+    );
+  }
+);
+
+// ============================================================
 // LOGIN
-// ====================================================================
+// ============================================================
 
 if (!process.env.TOKEN) {
-  console.error('❌ TOKEN não encontrado no arquivo .env!');
+  console.error(
+    '❌ TOKEN não encontrado no .env'
+  );
+
   process.exit(1);
 }
 
