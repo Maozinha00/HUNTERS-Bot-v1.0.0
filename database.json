@@ -1,6 +1,6 @@
 {
-  "estoque": 150000,
-  "caixa": 1500000,
+  "estoque": 75000,
+  "caixa": 0,
   "vendas": [],
   "settings": {
     "kitCost": 5000,
