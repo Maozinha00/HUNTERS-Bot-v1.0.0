@@ -11,7 +11,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 // Configurações extraídas do ambiente (.env)
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const DISCORD_TOKEN = process.env.TOKEN;
 const ERP_API_URL = process.env.ERP_API_URL || "https://ais-dev-4ufg2xvjuzvx5mctf6hr6n-39006909454.us-west2.run.app";
 
 if (!DISCORD_TOKEN) {
