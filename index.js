@@ -3,18 +3,19 @@
  * Desenvolvido para o clã/facção HUNTERS.
  * 
  * Sincronização em tempo real de manufatura, vendas e divisões financeiras.
- * Moldura Tática 2026.
+ * Sincronizado com o Painel ERP Hunters: https://ais-dev-4ufg2xvjuzvx5mctf6hr6n-39006909454.us-west2.run.app
  */
 
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
+// Configurações extraídas do ambiente (.env)
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const ERP_API_URL = process.env.ERP_API_URL || "https://ais-pre-4ufg2xvjuzvx5mctf6hr6n-39006909454.us-west2.run.app";
+const ERP_API_URL = process.env.ERP_API_URL || "https://ais-dev-4ufg2xvjuzvx5mctf6hr6n-39006909454.us-west2.run.app";
 
 if (!DISCORD_TOKEN) {
-  console.error("❌ ERRO: O token do bot (DISCORD_TOKEN) não foi configurado no arquivo .env!");
+  console.error("❌ ERRO: O token do bot (DISCORD_TOKEN) não foi configurado!");
   process.exit(1);
 }
 
@@ -43,6 +44,7 @@ const ITENS_DB = {
 const formatNumber = (num) => Number(num).toLocaleString("pt-BR");
 const formatMoney = (num) => `R$ ${formatNumber(num)}`;
 
+// Consulta dados globais do ERP
 async function fetchErpData() {
   try {
     const res = await fetch(`${ERP_API_URL}/api/data`);
@@ -74,7 +76,9 @@ client.on('messageCreate', async (message) => {
     return message.reply("❌ **Erro:** Não foi possível contactar o servidor ERP Hunters.");
   }
 
+  // ==========================================
   // COMANDO: !painel
+  // ==========================================
   if (command === 'painel') {
     const kits = Math.floor(erpData.estoque / erpData.settings.kitCost);
     const totalVendido = erpData.vendas.reduce((acc, v) => acc + v.total, 0);
@@ -103,20 +107,22 @@ client.on('messageCreate', async (message) => {
     return message.reply({ embeds: [embed], components: [row] });
   }
 
+  // ==========================================
   // COMANDO: !venda <item> <quantidade> [--desconto]
+  // ==========================================
   if (command === 'venda') {
     const itemArg = args[0];
     const qtdArg = args[1];
     const descArg = args[2];
 
     if (!itemArg || !qtdArg) {
-      return message.reply("⚠️ **Uso correto:** `!venda <item> <quantidade> [--desconto]`\nExemplo: `!venda ak47 5`");
+      return message.reply("⚠️ **Uso correto:** `!venda <item> <quantidade> [--desconto]`\nExemplo: `!venda ak47 5` ou `!venda glock17 2 --desconto`");
     }
 
     const itemKey = itemArg.toLowerCase();
     const item = ITENS_DB[itemKey];
     if (!item) {
-      return message.reply(`❌ **Item inválido!** Opções: ${Object.keys(ITENS_DB).join(", ")}`);
+      return message.reply(`❌ **Equipamento inválido!** Opções: ${Object.keys(ITENS_DB).join(", ")}`);
     }
 
     const qty = parseInt(qtdArg);
@@ -154,7 +160,7 @@ client.on('messageCreate', async (message) => {
           { name: "🏦 Entrada no Caixa (70%)", value: formatMoney(v.cla), inline: true },
           { name: "💸 Comissão Recebida (30%)", value: formatMoney(v.membro), inline: true }
         )
-        .setFooter({ text: "Sincronizado instantaneamente via API Link" })
+        .setFooter({ text: "Sincronizado instantaneamente via Hunters ERP Link" })
         .setTimestamp();
 
       return message.reply({ embeds: [embed] });
@@ -163,7 +169,9 @@ client.on('messageCreate', async (message) => {
     }
   }
 
+  // ==========================================
   // COMANDO: !ranking
+  // ==========================================
   if (command === 'ranking') {
     const rankingMap = {};
     erpData.vendas.forEach(v => {
@@ -187,14 +195,14 @@ client.on('messageCreate', async (message) => {
     const embed = new EmbedBuilder()
       .setTitle("🏆 RANKING DE VENDAS - HUNTERS ELITE")
       .setColor("#F59E0B")
-      .setDescription(list || "Nenhuma venda registrada.")
+      .setDescription(list || "Nenhuma venda registrada no sistema ainda.")
       .setTimestamp();
 
     return message.reply({ embeds: [embed] });
   }
 });
 
-// Suporte a botões interativos
+// Suporte a botões interativos das mensagens do bot
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
   const erpData = await fetchErpData();
@@ -223,4 +231,4 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.login(TOKEN);
+client.login(DISCORD_TOKEN);
