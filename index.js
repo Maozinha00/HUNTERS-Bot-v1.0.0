@@ -49,12 +49,12 @@ const ITENS_DB = {
 // Carrega ou inicializa o Banco de Dados JSON (com suporte a Backup contra corrupção)
 function loadDatabase() {
   const defaultData = {
-    estoque: 150000, // 150 mil kg de aço iniciais
-    caixa: 1500000,   // R$ 1.500.000,00 iniciais
+    estoque: 740000// 150 mil kg de aço iniciais
+    caixa: 0,   // R$ 1.500.000,00 iniciais
     vendas: [],
     logs: [],
     settings: {
-      kitCost: 5000,
+      kitCost: 8000,
       steelClanPercent: 10,
       clanSplitPercent: 70
     }
