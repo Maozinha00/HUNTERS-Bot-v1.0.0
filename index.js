@@ -2,9 +2,10 @@
  * 🐺 HUNTERS BOT - STANDALONE SCRIPT v3.5 🐺
  * Desenvolvido para o clã/facção HUNTERS.
  * 
- * 🚀 VERSÃO STANDALONE (100% OFFLINE - BANCO DE DADOS LOCAL JSON)
+ * 🚀 VERSÃO STANDALONE (100% OFFLINE - COM BANCO DE DADOS LOCAL JSON)
  * Gerencie estoque, vendas, caixa, comissões, ranking e logs diretamente pelo Discord.
  * Suporta persistência permanente de dados em um arquivo 'database.json'.
+ * Totalmente compatível com Node.js 18+ e pronto para Railway / VPS!
  */
 
 require('dotenv').config();
@@ -12,13 +13,13 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder
 const fs = require('fs');
 const path = require('path');
 
-const DISCORD_TOKEN = process.env.TOKEN || process.env.TOKEN;
-const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID; // Opcional: ID do cargo administrativo no arquivo .env
+const DISCORD_TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
+const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID; // ID do cargo administrativo opcional do .env
 const DB_FILE = path.join(__dirname, 'database.json');
 const BACKUP_FILE = path.join(__dirname, 'database_backup.json');
 
 if (!DISCORD_TOKEN) {
-  console.error("❌ ERRO: O token do bot não foi configurado no arquivo .env!");
+  console.error("❌ ERRO: O token do bot (DISCORD_TOKEN ou TOKEN) não foi configurado no arquivo .env!");
   process.exit(1);
 }
 
@@ -48,7 +49,7 @@ const ITENS_DB = {
 // Carrega ou inicializa o Banco de Dados JSON (com suporte a Backup contra corrupção)
 function loadDatabase() {
   const defaultData = {
-    estoque: 150000, // 150.000 kg de aço iniciais
+    estoque: 150000, // 150 mil kg de aço iniciais
     caixa: 1500000,   // R$ 1.500.000,00 iniciais
     vendas: [],
     logs: [],
@@ -90,7 +91,7 @@ function loadDatabase() {
         const rawBackup = fs.readFileSync(BACKUP_FILE, 'utf8');
         const parsedBackup = JSON.parse(rawBackup);
         fs.writeFileSync(DB_FILE, JSON.stringify(parsedBackup, null, 2), 'utf8');
-        console.log("♻️ Recuperação emergencial de backup concluída!");
+        console.log("♻️ Recuperação emergencial concluída com sucesso!");
         return parsedBackup;
       } catch (backupErr) {
         console.error("❌ Falha crítica: O backup também está corrompido:", backupErr);
@@ -148,7 +149,8 @@ client.once('ready', () => {
 🤖 Conectado como: ${client.user.tag}
 💾 Banco JSON: Ativo com backup de segurança.
 🛡️ Cargo Admin: ${ADMIN_ROLE_ID ? ADMIN_ROLE_ID : "Administrador Nativo"}
-===============================================`);
+===============================================
+`);
 });
 
 // Evento: Mensagem recebida
@@ -170,18 +172,39 @@ client.on('messageCreate', async (message) => {
       const totalVendido = localData.vendas.reduce((acc, v) => acc + v.total, 0);
       const split = localData.settings.clanSplitPercent || 70;
 
+      const padLine = (label, value, width = 38) => {
+        const separator = " : ";
+        const combinedLength = label.length + separator.length + value.length;
+        const spaces = width - combinedLength;
+        if (spaces <= 0) return label + separator + value;
+        return label + " ".repeat(spaces) + separator + value;
+      };
+
+      const line1 = padLine("ESTOQUE DE AÇO", formatNumber(localData.estoque) + " kg", 38);
+      const line2 = padLine("CAIXA DO CLÃ", formatMoney(localData.caixa), 38);
+      const line3 = padLine("KITS DISPONÍVEIS", formatNumber(kits) + " Unidades", 38);
+      const line4 = padLine("TOTAL VENDIDO", formatMoney(totalVendido), 38);
+      const line5 = padLine("LANÇAMENTOS SINC", formatNumber(localData.vendas.length) + " registros", 38);
+      const line6 = padLine("TAXA DE REPASSE", split + "% Clã / " + (100 - split) + "% Mem", 38);
+
+      const moldura = [
+        "╔══════════════════════════════════════════╗",
+        "║          PAINEL OPERACIONAL - HQ         ║",
+        "╠══════════════════════════════════════════╣",
+        "║  " + line1 + "  ║",
+        "║  " + line2 + "  ║",
+        "║  " + line3 + "  ║",
+        "╠══════════════════════════════════════════╣",
+        "║  " + line4 + "  ║",
+        "║  " + line5 + "  ║",
+        "║  " + line6 + "  ║",
+        "╚══════════════════════════════════════════╝"
+      ].join("\n");
+
       const embed = new EmbedBuilder()
         .setTitle("🐺 HUNTERS — PAINEL OPERACIONAL")
         .setColor("#9333EA")
-        .setDescription("### 📊 Status de Recursos e Operação do Clã (Persistência JSON)")
-        .addFields(
-          { name: "🛠️ Estoque de Aço", value: `**${formatNumber(localData.estoque)} kg**`, inline: true },
-          { name: "🏦 Caixa (" + split + "%)", value: `**${formatMoney(localData.caixa)}**`, inline: true },
-          { name: "🎁 Kits Prontos", value: `**${formatNumber(kits)} Kits**`, inline: true },
-          { name: "🛒 Total Vendido", value: `**${formatMoney(totalVendido)}**`, inline: true },
-          { name: "📜 Lançamentos", value: `**${localData.vendas.length} registros**`, inline: true },
-          { name: "⚖️ Repasse", value: `**${split}% Clã / ${100 - split}% Membro**`, inline: true }
-        )
+        .setDescription("### 📊 Status de Recursos e Operação do Clã (Persistência JSON)\n\n```text\n" + moldura + "\n```")
         .setFooter({ text: "Hunters Management v3.5 | JSON DB + Backup", iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
 
@@ -239,7 +262,7 @@ client.on('messageCreate', async (message) => {
       const aplicarDesconto = descArg === '--desconto';
       let precoUnitario = item.value;
       if (aplicarDesconto) {
-        precoUnitario = precoUnitario * 0.9; // 10% de desconto
+        precoUnitario = precoUnitario * 0.9; // 10% desconto
       }
 
       const acoConsumido = item.steel * qty;
@@ -482,7 +505,7 @@ client.on('messageCreate', async (message) => {
     // COMANDO: !logs
     if (command === 'logs') {
       if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores podem ver os logs operacionais.");
+        return message.reply("❌ **Permissão Negada:** Apenas administradores ou membros autorizados podem ver os logs operacionais.");
       }
 
       const logsList = (localData.logs || [])
@@ -533,6 +556,7 @@ client.on('messageCreate', async (message) => {
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
+  // Carrega dados atualizados para cliques em botões
   const localData = loadDatabase();
 
   try {
@@ -592,4 +616,4 @@ process.on('uncaughtException', (error) => {
   console.error('⚠️ [Hunters Bot] Erro não tratado capturado:', error);
 });
 
-client.login(=TOKEN);
+client.login(DISCORD_TOKEN);
