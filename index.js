@@ -1,19 +1,19 @@
 /**
- * 🐺 HUNTERS BOT - SCRIPT OFICIAL v2.5 🐺
+ * 🐺 HUNTERS BOT - STANDALONE SCRIPT v3.0 🐺
  * Desenvolvido para o clã/facção HUNTERS.
  * 
- * Sincronização em tempo real de manufatura, vendas e divisões financeiras.
- * Requisitos: Node.js v18+ (usa fetch nativo, sem necessidade de node-fetch!)
+ * 🚀 VERSÃO STANDALONE (100% OFFLINE - SEM API/ERP REQUISITADO)
+ * Gerencie estoque, vendas, caixa e comissões diretamente pelo Discord.
+ * Requisitos: Node.js v18+ (guarda estado em memória!)
  */
 
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-const DISCORD_TOKEN = process.env.TOKEN;
-const ERP_API_URL = "https://ais-dev-4ufg2xvjuzvx5mctf6hr6n-39006909454.us-west2.run.app/"; // URL do seu ERP Hunters
+const DISCORD_TOKEN = process.env.TOKEN || process.env.TOKEN;
 
 if (!DISCORD_TOKEN) {
-  console.error("❌ ERRO: O token do bot (DISCORD_TOKEN) não foi configurado!");
+  console.error("❌ ERRO: O token do bot (DISCORD_TOKEN ou TOKEN) não foi configurado no arquivo .env!");
   process.exit(1);
 }
 
@@ -39,27 +39,26 @@ const ITENS_DB = {
   box308: { name: "Box .308", steel: 200, value: 5000 }
 };
 
+// Banco de dados local em memória (Simula o ERP)
+let localData = {
+  estoque: 150000, // Estoque inicial padrão em kg
+  caixa: 1500000,   // Caixa inicial padrão em R$
+  vendas: [],
+  settings: {
+    kitCost: 5000,
+    steelClanPercent: 10
+  }
+};
+
 const formatNumber = (num) => Number(num).toLocaleString("pt-BR");
 const formatMoney = (num) => `R$ ${formatNumber(num)}`;
-
-async function fetchErpData() {
-  try {
-    // Usando o fetch nativo global do Node.js (Sem node-fetch!)
-    const res = await fetch(`${ERP_API_URL}/api/data`);
-    if (!res.ok) throw new Error("Erro na comunicação com o ERP");
-    return await res.json();
-  } catch (error) {
-    console.error("⚠️ Falha ao obter dados do ERP:", error.message);
-    return null;
-  }
-}
 
 // Ouvindo o evento correto 'clientReady' para evitar warnings
 client.once('clientReady', () => {
   console.log(`===============================================`);
   console.log(`🐺 BOT HUNTERS ONLINE E PRONTO PARA COMBATE!`);
   console.log(`🤖 Conectado como: ${client.user.tag}`);
-  console.log(`🌐 ERP Sincronizado: ${ERP_API_URL}`);
+  console.log(`💻 Modo: Standalone (Sem API - Armazenamento em Memória)`);
   console.log(`===============================================`);
 });
 
@@ -70,29 +69,24 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
-  const erpData = await fetchErpData();
-  if (!erpData) {
-    return message.reply("❌ **Erro:** Não foi possível contactar o servidor ERP Hunters.");
-  }
-
   // COMANDO: !painel
   if (command === 'painel') {
-    const kits = Math.floor(erpData.estoque / erpData.settings.kitCost);
-    const totalVendido = erpData.vendas.reduce((acc, v) => acc + v.total, 0);
+    const kits = Math.floor(localData.estoque / localData.settings.kitCost);
+    const totalVendido = localData.vendas.reduce((acc, v) => acc + v.total, 0);
 
     const embed = new EmbedBuilder()
-      .setTitle("🐺 HUNTERS — PAINEL DE CONTROLE")
+      .setTitle("🐺 HUNTERS — PAINEL STANDALONE (LOCAL)")
       .setColor("#9333EA")
-      .setDescription("### 📊 Status de Recursos e Operação do Clã")
+      .setDescription("### 📊 Status de Recursos e Operação do Clã (Sem API)")
       .addFields(
-        { name: "🛠️ Estoque de Aço", value: `**${formatNumber(erpData.estoque)} kg**`, inline: true },
-        { name: "🏦 Caixa (70%)", value: `**${formatMoney(erpData.caixa)}**`, inline: true },
+        { name: "🛠️ Estoque de Aço", value: `**${formatNumber(localData.estoque)} kg**`, inline: true },
+        { name: "🏦 Caixa (70%)", value: `**${formatMoney(localData.caixa)}**`, inline: true },
         { name: "🎁 Kits Prontos", value: `**${formatNumber(kits)} Kits**`, inline: true },
         { name: "🛒 Total Vendido", value: `**${formatMoney(totalVendido)}**`, inline: true },
-        { name: "📜 Lançamentos", value: `**${erpData.vendas.length} registros**`, inline: true },
+        { name: "📜 Lançamentos", value: `**${localData.vendas.length} registros**`, inline: true },
         { name: "⚖️ Repasse", value: `**70% Clã / 30% Membro**`, inline: true }
       )
-      .setFooter({ text: "Hunters Management ERP", iconURL: client.user.displayAvatarURL() })
+      .setFooter({ text: "Hunters Standalone Bot", iconURL: client.user.displayAvatarURL() })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
@@ -126,48 +120,106 @@ client.on('messageCreate', async (message) => {
     }
 
     const aplicarDesconto = descArg === '--desconto';
-
-    try {
-      const response = await fetch(`${ERP_API_URL}/api/venda`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: message.author.id,
-          userName: message.author.username,
-          itemKey: itemKey,
-          quantidade: qty,
-          aplicarDesconto: aplicarDesconto
-        })
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        return message.reply(`❌ **Erro na operação:** ${result.error || "Rejeitado pelo ERP."}`);
-      }
-
-      const v = result.venda;
-      const embed = new EmbedBuilder()
-        .setTitle("✅ VENDA REGISTRADA COM SUCESSO!")
-        .setColor("#10B981")
-        .setDescription(`👤 Vendedor: <@${v.userId}>\n🔫 Equipamento: **${v.item}** (${v.quantidade}x)\n🛠️ Aço consumido: ${formatNumber(v.aco)} kg`)
-        .addFields(
-          { name: "💰 Faturamento Bruto", value: `**${formatMoney(v.total)}**`, inline: true },
-          { name: "🏦 Entrada no Caixa (70%)", value: formatMoney(v.cla), inline: true },
-          { name: "💸 Comissão Recebida (30%)", value: formatMoney(v.membro), inline: true }
-        )
-        .setFooter({ text: "Sincronizado instantaneamente via API Link" })
-        .setTimestamp();
-
-      return message.reply({ embeds: [embed] });
-    } catch (err) {
-      return message.reply("❌ **Erro de conexão:** Não foi possível sincronizar a venda com o portal ERP.");
+    let precoUnitario = item.value;
+    if (aplicarDesconto) {
+      precoUnitario = precoUnitario * 0.9; // 10% desconto
     }
+
+    const acoConsumido = item.steel * qty;
+    const faturamentoBruto = precoUnitario * qty;
+
+    if (localData.estoque < acoConsumido) {
+      return message.reply(`❌ **Estoque insuficiente!** Essa venda exige **${formatNumber(acoConsumido)} kg** de aço, mas restam apenas **${formatNumber(localData.estoque)} kg**.`);
+    }
+
+    // Calcula divisões (70% Clã / 30% Membro)
+    const valorCla = Math.floor(faturamentoBruto * 0.7);
+    const valorMembro = Math.floor(faturamentoBruto * 0.3);
+
+    // Efetiva a transação no banco local
+    localData.estoque -= acoConsumido;
+    localData.caixa += valorCla;
+
+    const novaVenda = {
+      id: Date.now().toString(),
+      userId: message.author.id,
+      userName: message.author.username,
+      item: item.name,
+      quantidade: qty,
+      aco: acoConsumido,
+      total: faturamentoBruto,
+      cla: valorCla,
+      membro: valorMembro,
+      date: new Date().toISOString()
+    };
+
+    localData.vendas.push(novaVenda);
+
+    const embed = new EmbedBuilder()
+      .setTitle("✅ VENDA REGISTRADA (STANDALONE)!")
+      .setColor("#10B981")
+      .setDescription(`👤 Vendedor: <@${message.author.id}>\n🔫 Equipamento: **${item.name}** (${qty}x)\n🛠️ Aço consumido: ${formatNumber(acoConsumido)} kg`)
+      .addFields(
+        { name: "💰 Faturamento Bruto", value: `**${formatMoney(faturamentoBruto)}**`, inline: true },
+        { name: "🏦 Entrada no Caixa (70%)", value: formatMoney(valorCla), inline: true },
+        { name: "💸 Comissão Recebida (30%)", value: formatMoney(valorMembro), inline: true }
+      )
+      .setFooter({ text: "Operação efetuada e gravada em memória local." })
+      .setTimestamp();
+
+    return message.reply({ embeds: [embed] });
+  }
+
+  // COMANDO: !addaco <quantidade>
+  if (command === 'addaco') {
+    const qty = parseInt(args[0]);
+    if (isNaN(qty) || qty <= 0) {
+      return message.reply("⚠️ **Uso correto:** `!addaco <quantidade_kg>`\nExemplo: `!addaco 5000`");
+    }
+    localData.estoque += qty;
+    return message.reply(`✅ **Estoque Abastecido:** Adicionados **${formatNumber(qty)} kg** de aço. Novo total: **${formatNumber(localData.estoque)} kg**.`);
+  }
+
+  // COMANDO: !remaco <quantidade>
+  if (command === 'remaco') {
+    const qty = parseInt(args[0]);
+    if (isNaN(qty) || qty <= 0) {
+      return message.reply("⚠️ **Uso correto:** `!remaco <quantidade_kg>`\nExemplo: `!remaco 2000`");
+    }
+    if (localData.estoque < qty) {
+      return message.reply(`❌ **Estoque insuficiente!** Restam apenas **${formatNumber(localData.estoque)} kg**.`);
+    }
+    localData.estoque -= qty;
+    return message.reply(`✅ **Estoque Reduzido:** Removidos **${formatNumber(qty)} kg** de aço. Novo total: **${formatNumber(localData.estoque)} kg**.`);
+  }
+
+  // COMANDO: !addcaixa <valor>
+  if (command === 'addcaixa') {
+    const qty = parseInt(args[0]);
+    if (isNaN(qty) || qty <= 0) {
+      return message.reply("⚠️ **Uso correto:** `!addcaixa <valor_reais>`\nExemplo: `!addcaixa 50000`");
+    }
+    localData.caixa += qty;
+    return message.reply(`✅ **Caixa Alimentado:** Depositados **${formatMoney(qty)}** no Caixa. Novo saldo: **${formatMoney(localData.caixa)}**.`);
+  }
+
+  // COMANDO: !remcaixa <valor>
+  if (command === 'remcaixa') {
+    const qty = parseInt(args[0]);
+    if (isNaN(qty) || qty <= 0) {
+      return message.reply("⚠️ **Uso correto:** `!remcaixa <valor_reais>`\nExemplo: `!remcaixa 30000`");
+    }
+    if (localData.caixa < qty) {
+      return message.reply(`❌ **Saldo insuficiente!** Resta apenas **${formatMoney(localData.caixa)}**.`);
+    }
+    localData.caixa -= qty;
+    return message.reply(`✅ **Retirada Efetuada:** Sacados **${formatMoney(qty)}** do Caixa. Novo saldo: **${formatMoney(localData.caixa)}**.`);
   }
 
   // COMANDO: !ranking
   if (command === 'ranking') {
     const rankingMap = {};
-    erpData.vendas.forEach(v => {
+    localData.vendas.forEach(v => {
       if (!rankingMap[v.userId]) {
         rankingMap[v.userId] = { total: 0, count: 0, name: v.userName };
       }
@@ -193,25 +245,42 @@ client.on('messageCreate', async (message) => {
 
     return message.reply({ embeds: [embed] });
   }
+
+  // COMANDO: !ajuda
+  if (command === 'ajuda') {
+    const embed = new EmbedBuilder()
+      .setTitle("📖 GUIA DE COMANDOS - BOT HUNTERS")
+      .setColor("#3B82F6")
+      .setDescription("Aqui estão os comandos operacionais disponíveis no Bot:")
+      .addFields(
+        { name: "📊 `!painel`", value: "Exibe o status geral de recursos e botões rápidos." },
+        { name: "🛒 `!venda <item> <qtd> [--desconto]`", value: "Registra uma venda, calcula divisões e debita do estoque." },
+        { name: "🏆 `!ranking`", value: "Mostra o ranking dos melhores vendedores do clã." },
+        { name: "📦 `!addaco <qtd>` / `!remaco <qtd>`", value: "Adiciona ou remove aço do estoque geral." },
+        { name: "🏦 `!addcaixa <valor>` / `!remcaixa <valor>`", value: "Deposita ou retira fundos do caixa do clã." }
+      )
+      .setFooter({ text: "Hunters Management v3.0" })
+      .setTimestamp();
+
+    return message.reply({ embeds: [embed] });
+  }
 });
 
 // Suporte a botões interativos
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
-  const erpData = await fetchErpData();
-  if (!erpData) return interaction.reply({ content: "❌ Erro ao conectar ao ERP.", ephemeral: true });
 
   if (interaction.customId === 'btn_estoque') {
-    const clanAco = Math.floor(erpData.estoque * (erpData.settings.steelClanPercent / 100));
+    const clanAco = Math.floor(localData.estoque * (localData.settings.steelClanPercent / 100));
     return interaction.reply({
-      content: `📦 **ESTOQUE GERAL:** ${formatNumber(erpData.estoque)} kg de Aço\n🛡️ **Reserva Estratégica do Clã:** ${formatNumber(clanAco)} kg`,
+      content: `📦 **ESTOQUE GERAL:** ${formatNumber(localData.estoque)} kg de Aço\n🛡️ **Reserva Estratégica do Clã:** ${formatNumber(clanAco)} kg`,
       ephemeral: true
     });
   }
 
   if (interaction.customId === 'btn_caixa') {
     return interaction.reply({
-      content: `🏦 **SALDO ATUAL DO CAIXA:** ${formatMoney(erpData.caixa)} (Destinado à expansão e base do clã)`,
+      content: `🏦 **SALDO ATUAL DO CAIXA:** ${formatMoney(localData.caixa)} (Destinado à expansão e base do clã)`,
       ephemeral: true
     });
   }
