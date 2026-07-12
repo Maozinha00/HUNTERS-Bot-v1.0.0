@@ -12,7 +12,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder
 const fs = require('fs');
 const path = require('path');
 
-const DISCORD_TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
+const DISCORD_TOKEN = process.env.TOKEN || process.env.TOKEN;
 const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID; // Opcional: ID do cargo administrativo no arquivo .env
 const DB_FILE = path.join(__dirname, 'database.json');
 const BACKUP_FILE = path.join(__dirname, 'database_backup.json');
@@ -592,4 +592,4 @@ process.on('uncaughtException', (error) => {
   console.error('⚠️ [Hunters Bot] Erro não tratado capturado:', error);
 });
 
-client.login(DISCORD_TOKEN);
+client.login(=TOKEN);
