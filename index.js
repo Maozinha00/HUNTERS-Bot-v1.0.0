@@ -2,10 +2,9 @@
  * 🐺 HUNTERS BOT - STANDALONE SCRIPT v3.5 🐺
  * Desenvolvido para o clã/facção HUNTERS.
  * 
- * 🚀 VERSÃO STANDALONE (100% OFFLINE - COM BANCO DE DADOS LOCAL JSON)
+ * 🚀 VERSÃO STANDALONE (100% OFFLINE - BANCO DE DADOS LOCAL JSON)
  * Gerencie estoque, vendas, caixa, comissões, ranking e logs diretamente pelo Discord.
  * Suporta persistência permanente de dados em um arquivo 'database.json'.
- * Totalmente compatível com Node.js 18+ e pronto para Railway / VPS!
  */
 
 require('dotenv').config();
@@ -14,12 +13,12 @@ const fs = require('fs');
 const path = require('path');
 
 const DISCORD_TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
-const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID; // ID do cargo administrativo opcional do .env
+const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID; // Opcional: ID do cargo administrativo no arquivo .env
 const DB_FILE = path.join(__dirname, 'database.json');
 const BACKUP_FILE = path.join(__dirname, 'database_backup.json');
 
 if (!DISCORD_TOKEN) {
-  console.error("❌ ERRO: O token do bot (DISCORD_TOKEN ou TOKEN) não foi configurado no arquivo .env!");
+  console.error("❌ ERRO: O token do bot não foi configurado no arquivo .env!");
   process.exit(1);
 }
 
@@ -49,12 +48,12 @@ const ITENS_DB = {
 // Carrega ou inicializa o Banco de Dados JSON (com suporte a Backup contra corrupção)
 function loadDatabase() {
   const defaultData = {
-    estoque: 740000// 150 mil kg de aço iniciais
-    caixa: 0,   // R$ 1.500.000,00 iniciais
+    estoque: 150000, // 150.000 kg de aço iniciais
+    caixa: 1500000,   // R$ 1.500.000,00 iniciais
     vendas: [],
     logs: [],
     settings: {
-      kitCost: 8000,
+      kitCost: 5000,
       steelClanPercent: 10,
       clanSplitPercent: 70
     }
@@ -91,7 +90,7 @@ function loadDatabase() {
         const rawBackup = fs.readFileSync(BACKUP_FILE, 'utf8');
         const parsedBackup = JSON.parse(rawBackup);
         fs.writeFileSync(DB_FILE, JSON.stringify(parsedBackup, null, 2), 'utf8');
-        console.log("♻️ Recuperação emergencial concluída com sucesso!");
+        console.log("♻️ Recuperação emergencial de backup concluída!");
         return parsedBackup;
       } catch (backupErr) {
         console.error("❌ Falha crítica: O backup também está corrompido:", backupErr);
@@ -149,8 +148,7 @@ client.once('ready', () => {
 🤖 Conectado como: ${client.user.tag}
 💾 Banco JSON: Ativo com backup de segurança.
 🛡️ Cargo Admin: ${ADMIN_ROLE_ID ? ADMIN_ROLE_ID : "Administrador Nativo"}
-===============================================
-`);
+===============================================`);
 });
 
 // Evento: Mensagem recebida
@@ -172,6 +170,7 @@ client.on('messageCreate', async (message) => {
       const totalVendido = localData.vendas.reduce((acc, v) => acc + v.total, 0);
       const split = localData.settings.clanSplitPercent || 70;
 
+      // Alinhamento inteligente para moldura ASCII
       const padLine = (label, value, width = 38) => {
         const separator = " : ";
         const combinedLength = label.length + separator.length + value.length;
@@ -211,7 +210,8 @@ client.on('messageCreate', async (message) => {
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_estoque').setLabel('Estoque 📦').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('btn_caixa').setLabel('Caixa 🏦').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('btn_ranking').setLabel('Ranking 🏆').setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId('btn_ranking').setLabel('Ranking 🏆').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_nova_venda').setLabel('Registrar Venda 🛒').setStyle(ButtonStyle.Danger)
       );
 
       return message.reply({ embeds: [embed], components: [row] });
@@ -230,7 +230,7 @@ client.on('messageCreate', async (message) => {
       if (itemArg.toLowerCase() === 'itens') {
         let itemsList = "";
         Object.entries(ITENS_DB).forEach(([key, item]) => {
-          itemsList += `• **${key}**: ${item.name} | Custo: ${formatNumber(item.steel)} kg de aço | Valor: ${formatMoney(item.value)}\n`;
+          itemsList += `• **${key}**: ${item.name} | Custo: ${formatNumber(item.steel)} kg | Valor: ${formatMoney(item.value)}\n`;
         });
         const embed = new EmbedBuilder()
           .setTitle("🔫 ITENS E EQUIPAMENTOS CADASTRADOS")
@@ -245,39 +245,36 @@ client.on('messageCreate', async (message) => {
       let itemKey = Object.keys(ITENS_DB).find(k => k === inputNormalizado);
       
       if (!itemKey) {
-        // Busca parcial inteligente (Ex: "ak" acha "ak47", "glock" acha "glock17", "556" acha "box556")
         itemKey = Object.keys(ITENS_DB).find(k => k.includes(inputNormalizado) || inputNormalizado.includes(k));
       }
 
       const item = itemKey ? ITENS_DB[itemKey] : null;
       if (!item) {
-        return message.reply(`❌ **Item não encontrado!** Código digitado: \`${itemArg}\`. Opções válidas: \`${Object.keys(ITENS_DB).join(", ")}\` ou consulte \`!venda itens\``);
+        return message.reply(`❌ **Item não encontrado!** Opções válidas: \`${Object.keys(ITENS_DB).join(", ")}\``);
       }
 
       const qty = parseInt(qtdArg);
       if (isNaN(qty) || qty <= 0) {
-        return message.reply("❌ **Erro:** A quantidade inserida deve ser um número inteiro maior que zero.");
+        return message.reply("❌ **Erro:** A quantidade deve ser um número inteiro maior que zero.");
       }
 
       const aplicarDesconto = descArg === '--desconto';
       let precoUnitario = item.value;
       if (aplicarDesconto) {
-        precoUnitario = precoUnitario * 0.9; // 10% desconto
+        precoUnitario = precoUnitario * 0.9; // 10% de desconto
       }
 
       const acoConsumido = item.steel * qty;
       const faturamentoBruto = precoUnitario * qty;
 
       if (localData.estoque < acoConsumido) {
-        return message.reply(`❌ **Estoque insuficiente!** Essa venda exige **${formatNumber(acoConsumido)} kg** de aço, mas restam apenas **${formatNumber(localData.estoque)} kg** no estoque geral.`);
+        return message.reply(`❌ **Estoque insuficiente!** Exige **${formatNumber(acoConsumido)} kg**, restam apenas **${formatNumber(localData.estoque)} kg**.`);
       }
 
-      // Calcula divisões baseadas nas configurações carregadas
       const split = localData.settings.clanSplitPercent || 70;
       const valorCla = Math.floor(faturamentoBruto * (split / 100));
       const valorMembro = Math.floor(faturamentoBruto * ((100 - split) / 100));
 
-      // Efetiva a transação no banco local
       localData.estoque -= acoConsumido;
       localData.caixa += valorCla;
 
@@ -296,11 +293,7 @@ client.on('messageCreate', async (message) => {
       };
 
       localData.vendas.push(novaVenda);
-      
-      // Escreve log administrativo
       writeLog(localData, message.author, "REGISTRO_VENDA", `Venda de ${qty}x ${item.name} por ${formatMoney(faturamentoBruto)}`);
-      
-      // Salva o banco
       saveDatabase(localData);
 
       const embed = new EmbedBuilder()
@@ -312,7 +305,7 @@ client.on('messageCreate', async (message) => {
           { name: "🏦 Entrada no Caixa (" + split + "%)", value: `**${formatMoney(valorCla)}**`, inline: true },
           { name: "💸 Comissão Membro (" + (100 - split) + "%)", value: `**${formatMoney(valorMembro)}**`, inline: true }
         )
-        .setFooter({ text: "Venda gravada com sucesso no banco de dados JSON persistente." })
+        .setFooter({ text: "Venda gravada no banco JSON com segurança." })
         .setTimestamp();
 
       return message.reply({ embeds: [embed] });
@@ -321,30 +314,30 @@ client.on('messageCreate', async (message) => {
     // COMANDO: !addaco <quantidade>
     if (command === 'addaco') {
       if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores ou membros autorizados podem abastecer o estoque.");
+        return message.reply("❌ **Permissão Negada:** Apenas administradores do clã podem alterar o estoque.");
       }
 
       const qty = parseInt(args[0]);
       if (isNaN(qty) || qty <= 0) {
-        return message.reply("⚠️ **Uso correto:** `!addaco <quantidade_kg>`\nExemplo: `!addaco 5000`");
+        return message.reply("⚠️ **Uso correto:** `!addaco <quantidade>`");
       }
 
       localData.estoque += qty;
       writeLog(localData, message.author, "ADICIONAR_ACO", `Adicionados +${qty} kg ao estoque`);
       saveDatabase(localData);
 
-      return message.reply(`✅ **Estoque Abastecido:** Adicionados **${formatNumber(qty)} kg** de aço. Novo total: **${formatNumber(localData.estoque)} kg**.`);
+      return message.reply(`✅ **Estoque Abastecido:** Adicionados **${formatNumber(qty)} kg** de aço. Total: **${formatNumber(localData.estoque)} kg**.`);
     }
 
     // COMANDO: !remaco <quantidade>
     if (command === 'remaco') {
       if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores ou membros autorizados podem debitar do estoque.");
+        return message.reply("❌ **Permissão Negada.**");
       }
 
       const qty = parseInt(args[0]);
       if (isNaN(qty) || qty <= 0) {
-        return message.reply("⚠️ **Uso correto:** `!remaco <quantidade_kg>`\nExemplo: `!remaco 2000`");
+        return message.reply("⚠️ **Uso correto:** `!remaco <quantidade>`");
       }
 
       if (localData.estoque < qty) {
@@ -355,36 +348,36 @@ client.on('messageCreate', async (message) => {
       writeLog(localData, message.author, "REMOVER_ACO", `Removidos -${qty} kg do estoque`);
       saveDatabase(localData);
 
-      return message.reply(`✅ **Estoque Reduzido:** Removidos **${formatNumber(qty)} kg** de aço. Novo total: **${formatNumber(localData.estoque)} kg**.`);
+      return message.reply(`✅ **Estoque Reduzido:** Removidos **${formatNumber(qty)} kg** de aço. Total: **${formatNumber(localData.estoque)} kg**.`);
     }
 
     // COMANDO: !addcaixa <valor>
     if (command === 'addcaixa') {
       if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores ou membros autorizados podem depositar fundos.");
+        return message.reply("❌ **Permissão Negada.**");
       }
 
       const qty = parseInt(args[0]);
       if (isNaN(qty) || qty <= 0) {
-        return message.reply("⚠️ **Uso correto:** `!addcaixa <valor_reais>`\nExemplo: `!addcaixa 50000`");
+        return message.reply("⚠️ **Uso correto:** `!addcaixa <valor_reais>`");
       }
 
       localData.caixa += qty;
       writeLog(localData, message.author, "ADICIONAR_CAIXA", `Depósito de ${formatMoney(qty)} no caixa`);
       saveDatabase(localData);
 
-      return message.reply(`✅ **Caixa Alimentado:** Depositados **${formatMoney(qty)}** no Caixa. Novo saldo: **${formatMoney(localData.caixa)}**.`);
+      return message.reply(`✅ **Caixa Abastecido:** Depositados **${formatMoney(qty)}**. Novo saldo: **${formatMoney(localData.caixa)}**.`);
     }
 
     // COMANDO: !remcaixa <valor>
     if (command === 'remcaixa') {
       if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores ou membros autorizados podem sacar do caixa.");
+        return message.reply("❌ **Permissão Negada.**");
       }
 
       const qty = parseInt(args[0]);
       if (isNaN(qty) || qty <= 0) {
-        return message.reply("⚠️ **Uso correto:** `!remcaixa <valor_reais>`\nExemplo: `!remcaixa 30000`");
+        return message.reply("⚠️ **Uso correto:** `!remcaixa <valor_reais>`");
       }
 
       if (localData.caixa < qty) {
@@ -395,61 +388,25 @@ client.on('messageCreate', async (message) => {
       writeLog(localData, message.author, "REMOVER_CAIXA", `Retirada de ${formatMoney(qty)} do caixa`);
       saveDatabase(localData);
 
-      return message.reply(`✅ **Retirada Efetuada:** Sacados **${formatMoney(qty)}** do Caixa. Novo saldo: **${formatMoney(localData.caixa)}**.`);
+      return message.reply(`✅ **Retirada Efetuada:** Sacados **${formatMoney(qty)}**. Novo saldo: **${formatMoney(localData.caixa)}**.`);
     }
 
     // COMANDO ADMINISTRATIVO: !setsplit <porcentagem>
     if (command === 'setsplit') {
       if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores podem alterar a divisão.");
+        return message.reply("❌ **Permissão Negada.**");
       }
 
       const percent = parseInt(args[0]);
       if (isNaN(percent) || percent < 0 || percent > 100) {
-        return message.reply("⚠️ **Uso correto:** `!setsplit <porcentagem_cla>`\nExemplo: `!setsplit 70` (70% para o clã, 30% comissão para membro)");
+        return message.reply("⚠️ **Uso correto:** `!setsplit <porcentagem>` (ex: 70)");
       }
 
       localData.settings.clanSplitPercent = percent;
-      writeLog(localData, message.author, "CONFIG_SPLIT", `Alterada divisão de comissão para ${percent}% Clã`);
+      writeLog(localData, message.author, "CONFIG_SPLIT", `Alterada divisão para ${percent}% Clã`);
       saveDatabase(localData);
 
-      return message.reply(`✅ **Configuração Atualizada:** Divisão de comissão definida para **${percent}% Clã / ${100 - percent}% Membro**.`);
-    }
-
-    // COMANDO ADMINISTRATIVO: !setkit <custo_kg>
-    if (command === 'setkit') {
-      if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores podem alterar o custo de kits.");
-      }
-
-      const cost = parseInt(args[0]);
-      if (isNaN(cost) || cost <= 0) {
-        return message.reply("⚠️ **Uso correto:** `!setkit <custo_kg>`\nExemplo: `!setkit 5000` (Equivale a 5 toneladas de aço por kit pronto)");
-      }
-
-      localData.settings.kitCost = cost;
-      writeLog(localData, message.author, "CONFIG_KIT_COST", `Alterado custo por kit pronto para ${cost} kg`);
-      saveDatabase(localData);
-
-      return message.reply(`✅ **Configuração Atualizada:** Cada kit pronto agora equivale a **${formatNumber(cost)} kg** de aço.`);
-    }
-
-    // COMANDO ADMINISTRATIVO: !setclanpercent <porcentagem>
-    if (command === 'setclanpercent') {
-      if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores podem alterar a reserva estratégica.");
-      }
-
-      const percent = parseInt(args[0]);
-      if (isNaN(percent) || percent < 0 || percent > 100) {
-        return message.reply("⚠️ **Uso correto:** `!setclanpercent <porcentagem>`\nExemplo: `!setclanpercent 10` (Reserva estratégica do clã fixa em 10% do estoque)");
-      }
-
-      localData.settings.steelClanPercent = percent;
-      writeLog(localData, message.author, "CONFIG_CLAN_PERCENT", `Alterada porcentagem de reserva estratégica para ${percent}%`);
-      saveDatabase(localData);
-
-      return message.reply(`✅ **Configuração Atualizada:** Reserva estratégica do clã definida para **${percent}%** do estoque total.`);
+      return message.reply(`✅ **Divisão Atualizada:** Configurada para **${percent}% Clã / ${100 - percent}% Membro**.`);
     }
 
     // COMANDO ADMINISTRATIVO: !config
@@ -505,7 +462,7 @@ client.on('messageCreate', async (message) => {
     // COMANDO: !logs
     if (command === 'logs') {
       if (!hasAdminPermission(message)) {
-        return message.reply("❌ **Permissão Negada:** Apenas administradores ou membros autorizados podem ver os logs operacionais.");
+        return message.reply("❌ **Permissão Negada.**");
       }
 
       const logsList = (localData.logs || [])
@@ -529,15 +486,10 @@ client.on('messageCreate', async (message) => {
         .setColor("#3B82F6")
         .setDescription("Aqui estão os comandos operacionais disponíveis no Bot:")
         .addFields(
-          { name: "📊 `!painel`", value: "Exibe o status geral de recursos do clã com botões de atalho." },
-          { name: "🛒 `!venda <item> <qtd> [--desconto]`", value: "Registra uma venda, calcula o rateio e debita o aço do estoque (Possui busca inteligente/aproximada!)." },
-          { name: "🔫 `!venda itens`", value: "Mostra a tabela de todos os itens cadastrados com custos e valores." },
-          { name: "🏆 `!ranking`", value: "Mostra o ranking de desempenho dos melhores vendedores." },
-          { name: "⚙️ `!config`", value: "Mostra os parâmetros operacionais atuais do clã (comissões, kit, etc.)." },
-          { name: "📜 `!logs`", value: "Mostra o histórico das últimas 10 ações de controle (Apenas Admins)." },
-          { name: "📦 `!addaco <qtd>` / `!remaco <qtd>`", value: "Adiciona ou remove aço do estoque geral (Apenas Admins)." },
-          { name: "🏦 `!addcaixa <valor>` / `!remcaixa <valor>`", value: "Realiza depósitos ou saques diretos no caixa do clã (Apenas Admins)." },
-          { name: "🛠️ Comandos de Configuração (Admins)", value: "• `!setsplit <porcentagem>`: Define repasse ao clã (ex: 70)\n• `!setkit <kg>`: Define peso do kit pronto (ex: 5000)\n• `!setclanpercent <%>`: Define reserva estratégica (ex: 10)" }
+          { name: "📊 `!painel`", value: "Exibe o painel de recursos moldurado com botões interativos." },
+          { name: "🛒 `!venda <item> <qtd> [--desconto]`", value: "Registra venda, rateia faturamento e debita o aço." },
+          { name: "🏆 `!ranking`", value: "Ranking de desempenho dos vendedores." },
+          { name: "⚙️ `!config`", value: "Mostra parâmetros atuais da facção." }
         )
         .setFooter({ text: "Hunters Management v3.5 | JSON DB" })
         .setTimestamp();
@@ -545,18 +497,14 @@ client.on('messageCreate', async (message) => {
       return message.reply({ embeds: [embed] });
     }
   } catch (cmdError) {
-    console.error("⚠️ Erro ao executar comando " + command + ":", cmdError);
-    try {
-      return message.reply("⚠️ **Erro Interno:** Ocorreu um erro ao processar o comando. Ação cancelada com segurança.");
-    } catch (_) {}
+    console.error("⚠️ Erro ao executar comando:", cmdError);
   }
 });
 
-// Suporte a botões interativos
+// Suporte aos Botões Interativos
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
-  // Carrega dados atualizados para cliques em botões
   const localData = loadDatabase();
 
   try {
@@ -570,7 +518,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'btn_caixa') {
       return interaction.reply({
-        content: `🏦 **SALDO ATUAL DO CAIXA:** ${formatMoney(localData.caixa)} (Destinado à expansão e base do clã)`,
+        content: `🏦 **SALDO ATUAL DO CAIXA:** ${formatMoney(localData.caixa)} (Destinado à expansão e base)`,
         ephemeral: true
       });
     }
@@ -600,10 +548,28 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
     }
+
+    // NOVO RECURSO TOP: Botão de registro e ajuda de venda rápido
+    if (interaction.customId === 'btn_nova_venda') {
+      const split = localData.settings.clanSplitPercent || 70;
+      let itemsList = "";
+      Object.entries(ITENS_DB).forEach(([key, item]) => {
+        itemsList += `• **${key}** : ${item.name} | Custo: ${formatNumber(item.steel)} kg | Valor: ${formatMoney(item.value)}\n`;
+      });
+
+      const embed = new EmbedBuilder()
+        .setTitle("🛒 REGISTRO RÁPIDO DE VENDA - HUNTERS")
+        .setColor("#EF4444")
+        .setDescription(`Para lançar uma nova venda, utilize o comando abaixo no chat público:\n\n**\`\`\`text\n!venda <item> <quantidade> [--desconto]\n\`\`\`**\n💡 *Exemplo: \`!venda ak47 2\` ou \`!venda m16 5 --desconto\`*\n\n📋 **TABELA DE CÓDIGOS E VALORES:**\n${itemsList}\n⚖️ **RATEIO FINANCEIRO ATUAL:**\n• **${split}%** destinado ao Caixa do Clã\n• **${100 - split}%** de Comissão para o Vendedor`)
+        .setFooter({ text: "Sindicato de Armas Hunters | ERP Sinc" })
+        .setTimestamp();
+
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
   } catch (btnError) {
-    console.error("⚠️ Erro na interação do botão:", btnError);
+    console.error("⚠️ Erro na interação:", btnError);
     try {
-      return interaction.reply({ content: "❌ Ocorreu um erro ao processar esta interação.", ephemeral: true });
+      return interaction.reply({ content: "❌ Erro ao processar esta interação.", ephemeral: true });
     } catch (_) {}
   }
 });
