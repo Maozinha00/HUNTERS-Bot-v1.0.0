@@ -10,7 +10,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const DISCORD_TOKEN = process.env.TOKEN;
-const ERP_API_URL = "https://ais-dev-4ufg2xvjuzvx5mctf6hr6n-39006909454.us-west2.run.app"; // URL do seu ERP Hunters
+const ERP_API_URL = "https://ais-dev-4ufg2xvjuzvx5mctf6hr6n-39006909454.us-west2.run.app/"; // URL do seu ERP Hunters
 
 if (!DISCORD_TOKEN) {
   console.error("❌ ERRO: O token do bot (DISCORD_TOKEN) não foi configurado!");
