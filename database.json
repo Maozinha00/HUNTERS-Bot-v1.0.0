@@ -1,4 +1,9 @@
 {
-  "estoque": 0,
-  "vendas": []
+  "estoque": 150000,
+  "caixa": 1500000,
+  "vendas": [],
+  "settings": {
+    "kitCost": 5000,
+    "steelClanPercent": 10
+  }
 }
