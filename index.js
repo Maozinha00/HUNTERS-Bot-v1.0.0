@@ -252,6 +252,7 @@ const enviarPainelCentral = (channel, targetUser = null) => {
   const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
   const split = db.config.splitPercent;
   const metaIndividual = db.config.kitMeta?.meta ?? 8000;
+  const custoKit = db.config.kitCost ?? 3260;
 
   // Calcular estatísticas dinâmicas para o painel
   const statsMap = {};
@@ -597,7 +598,7 @@ client.on('messageCreate', async (message) => {
       return message.reply(`❌ **Arma inválida!** Opções: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\``);
     }
 
-    const acoNecessario = arma.aco * quantidade;
+    const acoNecessario = arma.aco * quantity;
     const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * ((db.config.percentSteelForSales || 70) / 100));
 
     if (acoVendas < acoNecessario) {
@@ -1000,6 +1001,25 @@ client.on('interactionCreate', async (interaction) => {
         .setCustomId('aco_quantidade')
         .setLabel('Quantidade de Aço (em kg)')
         .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Ex: 5000')
+        .setRequired(true);
+
+      const row = new ActionRowBuilder().addComponents(inputAco);
+      modal.addComponents(row);
+
+      return interaction.showModal(modal);
+    }
+
+    // BOTÃO: REGISTRAR META / FARME (Abre Modal)
+    if (customId === 'painel_registrar_meta') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_registrar_meta')
+        .setTitle('🎯 REGISTRAR FARME DIÁRIO');
+
+      const inputAco = new TextInputBuilder()
+        .setCustomId('farme_quantidade')
+        .setLabel('Quantidade de Aço Farmado (em kg)')
+        .setStyle(TextInputStyle.Short)
         .setPlaceholder('Ex: 2500')
         .setRequired(true);
 
@@ -1103,10 +1123,10 @@ client.on('interactionCreate', async (interaction) => {
       const pctKits = db.config.percentSteelForKits || 30;
       const pctSales = db.config.percentSteelForSales || 70;
       const addKits = Math.floor(quantidade * (pctKits / 100));
-      const addSales = quantity => quantidade - addKits; // safe backup
+      const addSales = quantidade - addKits;
 
       db.estoqueKits = (db.estoqueKits || 0) + addKits;
-      db.estoqueVendas = (db.estoqueVendas || 0) + (quantidade - addKits);
+      db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
       db.estoque += quantidade;
 
       if (!db.farmes) db.farmes = [];
@@ -1236,7 +1256,7 @@ client.on('interactionCreate', async (interaction) => {
       const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
       const lucroClas = totalVenda - comissaoVendedor;
 
-      // Atualizar estoques no Baú (Deduzir apenas do estoque de vendas)
+      // Update stocks in the chest (Deduct only from sales stock)
       db.estoqueVendas = acoVendas - acoNecessario;
       db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
       db.estoque = db.estoqueKits + db.estoqueVendas;
