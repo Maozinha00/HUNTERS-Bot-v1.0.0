@@ -41,9 +41,9 @@ const CONFIG = {
   CANAL_PAINEL_ID: '1523844178151473193',
   META_ACO_KG: 8000,
   CUSTO_KIT_KG: 3260,
-  SPLIT_CLAN_PERCENT: 50, // 50% Clã, 50% Membro
-  PERCENT_STEEL_FOR_KITS: 60, // 60% para kits
-  PERCENT_STEEL_FOR_SALES: 40 // 40% para vendas
+  SPLIT_CLAN_PERCENT: 30, // 30% Comissão Membro, 70% Clã
+  PERCENT_STEEL_FOR_KITS: 30, // 30% para kits
+  PERCENT_STEEL_FOR_SALES: 70 // 70% para vendas
 };
 
 // TABELA DE ARMAS E REQUISITOS DE AÇO / PREÇOS
@@ -68,10 +68,10 @@ const KIT_META_ITENS = {
 // INICIALIZAÇÃO DO BANCO DE DADOS LOCAL ( hunters-db.json )
 const DB_FILE = path.join(__dirname, 'hunters-db.json');
 let db = {
-  estoque: 150000, // kg inicial
-  estoqueKits: 90000,
-  estoqueVendas: 60000,
-  caixa: 15000000, // R$ inicial
+  estoque: 69000, // kg inicial
+  estoqueKits: 20700,
+  estoqueVendas: 48300,
+  caixa: 280000, // R$ inicial
   vendas: [],
   farmes: [],
   config: { ...CONFIG },
@@ -116,7 +116,7 @@ const client = new Client({
 
 // FUNÇÃO PARA ATUALIZAR PARCELAS DE ESTOQUE
 function recalcularEstoqueDividido() {
-  const pctKits = db.config.PERCENT_STEEL_FOR_KITS || 60;
+  const pctKits = db.config.PERCENT_STEEL_FOR_KITS || 30;
   db.estoqueKits = Math.floor((db.estoque * pctKits) / 100);
   db.estoqueVendas = db.estoque - db.estoqueKits;
 }
@@ -175,14 +175,133 @@ async function verificarMetaAtingida(userId, userName, totalAcoAnterior, totalAc
 
 // GERAR O PAYLOAD VISUAL DO PAINEL CENTRAL
 function obterPainelPayload() {
-  const kitsProntos = Math.floor(db.estoqueKits / db.config.CUSTO_KIT_KG);
+  const kitsDisponiveis = Math.floor(db.estoqueKits / db.config.CUSTO_KIT_KG);
+  const kitsFormatados = String(kitsDisponiveis).padStart(2, '0');
+
+  // Calculate weekly goal values
+  const totalDepositado = db.farmes.reduce((acc, f) => acc + f.quantidade, 0);
+  const metaObjetivo = db.config.META_ACO_KG || 8000;
+  const progressoPct = Math.min(100, Math.floor((totalDepositado / metaObjetivo) * 100));
+
+  // Build progress bar (40 chars)
+  const totalCharsBar = 40;
+  const filledChars = Math.min(totalCharsBar, Math.floor((progressoPct / 100) * totalCharsBar));
+  const emptyChars = totalCharsBar - filledChars;
+  const progressBar = '█'.repeat(filledChars) + '░'.repeat(emptyChars);
+
+  // Financeiro
+  const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
+  const splitClan = db.config.SPLIT_CLAN_PERCENT || 30; // member commission (30%)
+  const splitClanPercent = 100 - splitClan; // clan share (70%)
+  const receitaClan = totalVendido * (splitClanPercent / 100);
+  const comissaoTotal = totalVendido * (splitClan / 100);
+  const patrimonioTotal = db.caixa; // cofre balance
+
+  // Metas batidas count
+  const todosUsuarios = new Set([...db.farmes.map(f => f.userId), ...db.vendas.map(v => v.userId)]);
+  let metasBatidasCount = 0;
+  todosUsuarios.forEach(userId => {
+    let totalMembro = 0;
+    if (db.farmes) {
+      db.farmes.forEach(f => {
+        if (f.userId === userId) totalMembro += f.quantidade;
+      });
+    }
+    if (db.vendas) {
+      db.vendas.forEach(v => {
+        if (v.userId === userId) totalMembro += (v.acoConsumido || 0);
+      });
+    }
+    if (totalMembro >= metaObjetivo) {
+      metasBatidasCount++;
+    }
+  });
+
+  const vendasCount = db.vendas.length;
+
+  // Helper formatting functions
+  const formatarLinhaBox = (conteudo, larguraInterna = 61) => {
+    return `┃ ${conteudo.padEnd(larguraInterna, ' ')} ┃`;
+  };
+
+  const obterLinhaComPontos = (label, valor, larguraTotal = 43) => {
+    const dotsCount = larguraTotal - label.length - valor.length;
+    const dots = '.'.repeat(Math.max(2, dotsCount));
+    return `${label}${dots} ${valor}`;
+  };
+
+  const lines = [];
+
+  // ASCII Header
+  lines.push('╔══════════════════════════════════════════════════════════════════════╗');
+  lines.push('║                                                                      ║');
+  lines.push('║   ██╗  ██╗██╗   ██╗███╗   ██╗████████╗███████╗██████╗ ███████╗       ║');
+  lines.push('║   ██║  ██║██║   ██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗██╔════╝       ║');
+  lines.push('║   ███████║██║   ██║██╔██╗ ██║   ██║   █████╗  ██████╔╝███████╗       ║');
+  lines.push('║   ██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗╚════██║       ║');
+  lines.push('║   ██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║███████║       ║');
+  lines.push('║   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚══════╝       ║');
+  lines.push('║                                                                      ║');
+  lines.push('║                    🐺 ERP PREMIUM • GERENCIAMENTO                    ║');
+  lines.push('║                     Sistema Inteligente do Clã v4.0                  ║');
+  lines.push('║                                                                      ║');
+  lines.push('╚══════════════════════════════════════════════════════════════════════╝');
+  lines.push('');
+
+  // ESTOQUE BOX
+  lines.push('┏━━━━━━━━━━━━━━━━━━━━━━━━━━ 📦 ESTOQUE ━━━━━━━━━━━━━━━━━━━━━━━━━━┓');
+  lines.push(formatarLinhaBox(''));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('⛓️  Aço Total', `${formatarNumero(db.estoque)} kg`)));
+  lines.push(formatarLinhaBox(obterLinhaComPontos(`🔫 Aço para Venda (${db.config.PERCENT_STEEL_FOR_SALES}%)`, `${formatarNumero(db.estoqueVendas)} kg`)));
+  lines.push(formatarLinhaBox(obterLinhaComPontos(`🎁 Aço para Kits (${db.config.PERCENT_STEEL_FOR_KITS}%)`, `${formatarNumero(db.estoqueKits)} kg`)));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('📦 Kits Disponíveis', kitsFormatados)));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('📈 Aproveitamento', '100%')));
+  lines.push(formatarLinhaBox(''));
+  lines.push('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛');
+  lines.push('');
+
+  // FINANCEIRO BOX
+  lines.push('┏━━━━━━━━━━━━━━━━━━━━━━━━ 💰 FINANCEIRO ━━━━━━━━━━━━━━━━━━━━━━━━━┓');
+  lines.push(formatarLinhaBox(''));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('🏦 Caixa do Clã', formatarMoeda(db.caixa))));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('💵 Total Vendido', formatarMoeda(totalVendido))));
+  lines.push(formatarLinhaBox(obterLinhaComPontos(`📈 Receita do Clã (${splitClanPercent}%)`, formatarMoeda(receitaClan))));
+  lines.push(formatarLinhaBox(obterLinhaComPontos(`💸 Comissão (${splitClan}%)`, formatarMoeda(comissaoTotal))));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('💎 Patrimônio Total', formatarMoeda(patrimonioTotal))));
+  lines.push(formatarLinhaBox(''));
+  lines.push('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛');
+  lines.push('');
+
+  // META DA SEMANA BOX
+  lines.push('┏━━━━━━━━━━━━━━━━━━━━━━━ 🎯 META DA SEMANA ━━━━━━━━━━━━━━━━━━━━━━┓');
+  lines.push(formatarLinhaBox(''));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('🏆 Objetivo', `${formatarNumero(metaObjetivo)} Aços`)));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('📥 Depositado', `${formatarNumero(totalDepositado)} Aços`)));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('📊 Progresso', `${progressoPct}%`)));
+  lines.push(formatarLinhaBox(''));
+  lines.push(formatarLinhaBox(`${progressBar} ${progressoPct}%`));
+  lines.push(formatarLinhaBox(''));
+  lines.push(formatarLinhaBox('🎁 RECOMPENSA                                            🎁'));
+  lines.push(formatarLinhaBox(''));
+  lines.push(formatarLinhaBox('🔫 AK-47 x1'));
+  lines.push(formatarLinhaBox('🔫 Glock 17 x1'));
+  lines.push(formatarLinhaBox('📦 Box 5.56 x3'));
+  lines.push(formatarLinhaBox('📦 Box Pistola x2'));
+  lines.push(formatarLinhaBox(''));
+  lines.push('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛');
+  lines.push('');
+
+  // ESTATÍSTICAS GERAIS BOX
+  lines.push('┏━━━━━━━━━━━━━━━━━━━━━━ 📊 ESTATÍSTICAS GERAIS ━━━━━━━━━━━━━━━━━━┓');
+  lines.push(formatarLinhaBox(''));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('👥 Metas Batidas', String(metasBatidasCount))));
+  lines.push(formatarLinhaBox(obterLinhaComPontos('🛒 Vendas Registradas', String(vendasCount))));
+  lines.push(formatarLinhaBox(''));
+  lines.push('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛');
 
   const embed = new EmbedBuilder()
-    .setTitle('🐺 HUNTERS ERP • PAINEL OPERACIONAL')
     .setColor('#a855f7')
-    .setDescription(
-      `Bem-vindo à central de inteligência e logística do clã **Hunters**. Aqui você pode atualizar o estoque do baú, registrar seus farmes individuais de aço e lançar vendas de armas com divisão automática de lucros.\n\n📊 **ESTADO ATUAL DO ESTOQUE**\n⛓️ **Estoque Geral:** **${formatarNumero(db.estoque)} kg** de aço\n└─ 🎁 Reservado p/ Kits (${db.config.PERCENT_STEEL_FOR_KITS}%): **${formatarNumero(db.estoqueKits)} kg**\n└─ 🔫 Reservado p/ Vendas (${db.config.PERCENT_STEEL_FOR_SALES}%): **${formatarNumero(db.estoqueVendas)} kg**\n\n🎁 **SITUAÇÃO DE KITS DA META**\n📦 **Kits Prontos p/ Retirada:** **${formatarNumero(kitsProntos)}** kits *(Custo: ${formatarNumero(db.config.CUSTO_KIT_KG)} kg/kit)*\n\n🏦 **RECURSOS DO CLÃ**\n💰 **Caixa Líquido do Clã:** **${formatarMoeda(db.caixa)}**\n💸 **Divisão de Vendas:** **${100 - db.config.SPLIT_CLAN_PERCENT}%** Clã | **${db.config.SPLIT_CLAN_PERCENT}%** Comissão Membro\n\n⏱️ *Última sincronização em tempo real: <t:${Math.floor(Date.now() / 1000)}:R>*`
-    )
+    .setDescription('```\n' + lines.join('\n') + '\n```')
     .setFooter({ text: 'Hunters ERP • Clique nos botões abaixo para preencher os formulários' })
     .setTimestamp();
 
@@ -368,8 +487,8 @@ client.on('messageCreate', async (message) => {
 
     db.farmes = [];
     db.vendas = [];
-    db.estoque = 150000;
-    db.caixa = 15000000;
+    db.estoque = 69000;
+    db.caixa = 280000;
     recalcularEstoqueDividido();
     salvarBanco();
 
@@ -652,7 +771,7 @@ client.on('interactionCreate', async (interaction) => {
       const precoLiquido = precoBruto - valorDesconto;
 
       // Divisão de lucros (split %)
-      const pctMembro = db.config.SPLIT_CLAN_PERCENT || 50;
+      const pctMembro = db.config.SPLIT_CLAN_PERCENT || 30;
       const comissaoMembro = (precoLiquido * pctMembro) / 100;
       const liquidoClan = precoLiquido - comissaoMembro;
 
