@@ -59,7 +59,6 @@ let db = {
   caixa: 280000,          // R$ 280.000 padrão
   vendas: [],
   kitsEntregues: [],      // Histórico de Kits entregues aos membros
-  farmes: [],             // Registro de farmes diários para as metas
   config: {
     splitPercent: 30,           // % de comissão do vendedor (membro)
     steelClanPercent: 10,       // % de retenção de aço pro clã
@@ -229,24 +228,140 @@ const enviarPainelCentral = (channel, targetUser = null) => {
   const kitsProntos = calcularKitsDisponiveis();
   const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
   const split = db.config.splitPercent;
+  const metaIndividual = db.config.kitMeta?.meta ?? 8000;
+  const custoKit = db.config.kitCost ?? 3260;
+
+  // Calcular estatísticas dinâmicas para o painel
+  const statsMap = {};
+  db.vendas.forEach(v => {
+    const key = v.userId;
+    if (!statsMap[key]) {
+      statsMap[key] = { aco: 0 };
+    }
+    statsMap[key].aco += v.aco;
+  });
+  if (db.farmes) {
+    db.farmes.forEach(f => {
+      const key = f.userId;
+      if (!statsMap[key]) {
+        statsMap[key] = { aco: 0 };
+      }
+      statsMap[key].aco += (f.quantidade || 0);
+    });
+  }
+  const metasBatidas = Object.values(statsMap).filter(s => s.aco >= metaIndividual).length;
+  const kitsEntregues = db.kitsEntregues ? db.kitsEntregues.length : 0;
+  const vendasRegistradas = db.vendas ? db.vendas.length : 0;
+
+  const formatarLinhaBox = (prefix, valor) => {
+    let visualLen = 0;
+    for (let i = 0; i < prefix.length; i++) {
+      const code = prefix.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF) {
+        visualLen += 2;
+        i++;
+      } else if (code === 0xFE0F) {
+        // variation selector
+      } else if (code === 0x26D3 || code === 0x23F1) {
+        visualLen += 2;
+      } else {
+        visualLen += 1;
+      }
+    }
+    const targetCol = 27;
+    const spacesBeforeColon = Math.max(1, targetCol - visualLen);
+    const part1 = prefix + ' '.repeat(spacesBeforeColon) + ':: ';
+    
+    let part1AndValueLen = targetCol + 3;
+    for (let i = 0; i < valor.length; i++) {
+      part1AndValueLen += 1;
+    }
+    const spacesAfterValue = Math.max(0, 56 - part1AndValueLen);
+    return part1 + valor + ' '.repeat(spacesAfterValue) + '│';
+  };
+
+  const formatarLinhaSimples = (texto) => {
+    let visualLen = 0;
+    for (let i = 0; i < texto.length; i++) {
+      const code = texto.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF) {
+        visualLen += 2;
+        i++;
+      } else if (code === 0xFE0F) {
+        // variation selector
+      } else if (code === 0x26D3 || code === 0x23F1) {
+        visualLen += 2;
+      } else {
+        visualLen += 1;
+      }
+    }
+    const spacesAfter = Math.max(0, 56 - visualLen);
+    return texto + ' '.repeat(spacesAfter) + '│';
+  };
+
+  const formatarMoedaResumida = (valor) => {
+    return "R$ " + formatarNumero(Math.floor(valor));
+  };
+
+  let painelTexto = "```\n";
+  painelTexto += "                    ╔══════════════════════════════════════════╗\n";
+  painelTexto += "                    ║                                          ║\n";
+  painelTexto += "                    ║              🐺 HUNTERS ERP              ║\n";
+  painelTexto += "                    ║         Premium Management • v4.0        ║\n";
+  painelTexto += "                    ║                                          ║\n";
+  painelTexto += "                    ╚══════════════════════════════════════════╝\n\n";
+
+  painelTexto += "╭━━━━━━━━━━━━━━━━━━━━━━ 📦 ESTOQUE ━━━━━━━━━━━━━━━━━━━━━━╮\n";
+  painelTexto += formatarLinhaBox("│ ⛓️ Aço Total", `${formatarNumero(db.estoque)} kg`) + "\n";
+  painelTexto += formatarLinhaBox("│ 🔫 Aço para Vendas", `${formatarNumero(acoVendas)} kg (${db.config.percentSteelForSales || 70}%)`) + "\n";
+  painelTexto += formatarLinhaBox("│ 🎁 Aço para Kits", `${formatarNumero(acoKits)} kg (${db.config.percentSteelForKits || 30}%)`) + "\n";
+  painelTexto += formatarLinhaBox("│ 📦 Kits Disponíveis", `${formatarNumero(kitsProntos)} Kits`) + "\n";
+  painelTexto += "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n";
+
+  painelTexto += "╭━━━━━━━━━━━━━━━━━━━━━━ 💰 FINANCEIRO ━━━━━━━━━━━━━━━━━━━╮\n";
+  painelTexto += formatarLinhaBox("│ 🏦 Caixa do Clã", formatarMoedaResumida(db.caixa)) + "\n";
+  painelTexto += formatarLinhaBox("│ 💵 Total Vendido", formatarMoedaResumida(totalVendido)) + "\n";
+  painelTexto += formatarLinhaBox("│ 📈 Lucro do Clã", `${100 - split}%`) + "\n";
+  painelTexto += formatarLinhaBox("│ 💸 Comissão", `${split}%`) + "\n";
+  painelTexto += "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n";
+
+  painelTexto += "╭━━━━━━━━━━━━━━━━━━━━━━ 🎯 META DA SEMANA ━━━━━━━━━━━━━━━╮\n";
+  painelTexto += formatarLinhaBox("│ 🏆 Objetivo", `${formatarNumero(metaIndividual)} Aços`) + "\n";
+  painelTexto += formatarLinhaSimples("│") + "\n";
+  painelTexto += formatarLinhaSimples("│ 🎁 RECOMPENSA") + "\n";
+  painelTexto += formatarLinhaSimples("│") + "\n";
+  painelTexto += formatarLinhaSimples("│ 🔫 AK-47 x1") + "\n";
+  painelTexto += formatarLinhaSimples("│ 🔫 Glock 17 x1") + "\n";
+  painelTexto += formatarLinhaSimples("│ 📦 Box 5.56 x3") + "\n";
+  painelTexto += formatarLinhaSimples("│ 📦 Box Pistola x2") + "\n";
+  painelTexto += "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n";
+
+  const historicoCount = db.vendas.length + (db.farmes ? db.farmes.length : 0) + (db.kitsEntregues ? db.kitsEntregues.length : 0);
+
+  painelTexto += "╭━━━━━━━━━━━━━━━━━━━━━━ 📊 ESTATÍSTICAS ━━━━━━━━━━━━━━━━━╮\n";
+  painelTexto += formatarLinhaBox("│ 👥 Metas Batidas", String(metasBatidas)) + "\n";
+  painelTexto += formatarLinhaBox("│ 🎁 Kits Entregues", String(kitsEntregues)) + "\n";
+  painelTexto += formatarLinhaBox("│ 🛒 Vendas Registradas", String(vendasRegistradas)) + "\n";
+  painelTexto += formatarLinhaBox("│ 📜 Histórico", String(historicoCount)) + "\n";
+  painelTexto += "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n";
+
+  painelTexto += "╭━━━━━━━━━━━━━━━━━━━━━━ ⚡ STATUS DO SISTEMA ━━━━━━━━━━━━━╮\n";
+  painelTexto += formatarLinhaSimples("│ 🟢 Sistema Online") + "\n";
+  painelTexto += formatarLinhaSimples("│ 🔒 ERP Sincronizado") + "\n";
+  painelTexto += formatarLinhaSimples("│ 💾 Banco de Dados Conectado") + "\n";
+  painelTexto += formatarLinhaSimples("│ ⏱️ Atualização em Tempo Real") + "\n";
+  painelTexto += "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n";
+
+  painelTexto += "                 🐺 HUNTERS BOT • ERP PREMIUM • v4.0\n";
+  painelTexto += "               Desenvolvido para o Clã HUNTERS ©\n";
+  painelTexto += "```";
 
   const embedPainel = new EmbedBuilder()
-    .setTitle('🐺 HUNTERS BOT — PAINEL CENTRAL')
-    .setDescription('🐺 **SISTEMA DE GESTÃO HUNTERS**\n\nControle oficial de estoque do baú, divisões operacionais de aço, caixa e vendas para a facção.')
+    .setDescription(painelTexto)
     .setColor('#a855f7')
-    .setThumbnail(client.user.displayAvatarURL())
-    .addFields(
-      { name: '🛠️ Aço p/ Vendas', value: `**${formatarNumero(acoVendas)} kg** (${db.config.percentSteelForSales || 70}%)`, inline: true },
-      { name: '⚙️ Aço p/ Kits', value: `**${formatarNumero(acoKits)} kg** (${db.config.percentSteelForKits || 30}%)`, inline: true },
-      { name: '🎁 Kits Disponíveis', value: `**${formatarNumero(kitsProntos)} Kits**`, inline: true },
-      { name: '🏦 Caixa HUNTERS', value: `**${formatarMoeda(db.caixa)}**`, inline: true },
-      { name: '🛒 Total Faturado', value: `**${formatarMoeda(totalVendido)}**`, inline: true },
-      { name: '📊 Split de Lucros', value: `🏦 **${100 - split}% Clã** | 💵 **${split}% Membro**`, inline: true }
-    )
-    .setFooter({ text: 'HUNTERS BOT v3.5 🐺 • Operando com segurança' })
     .setTimestamp();
 
-  // Botões de Interação Ultra Modernos (Layout em 2 linhas)
+  // Botões de Interação de cor Roxa (ButtonStyle.Primary)
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('painel_estoque')
@@ -259,944 +374,713 @@ const enviarPainelCentral = (channel, targetUser = null) => {
     new ButtonBuilder()
       .setCustomId('painel_registrar_meta')
       .setLabel('🎯 Registrar Meta')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('painel_addaco')
       .setLabel('➕ Adicionar Aço')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('painel_subaco')
       .setLabel('➖ Retirar Aço')
-      .setStyle(ButtonStyle.Danger)
+      .setStyle(ButtonStyle.Primary)
   );
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('painel_venda')
       .setLabel('💰 Registrar Venda')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('painel_kits')
       .setLabel('🎁 Kits Meta')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('painel_ranking')
       .setLabel('🏆 Ranking')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('painel_metas')
       .setLabel('🎯 Metas Aço')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('painel_historico')
       .setLabel('📜 Histórico')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Primary)
   );
 
-  const replyOptions = { embeds: [embedPainel], components: [row1, row2] };
-  
-  if (targetUser) {
-    return channel.send({ content: `Olá ${targetUser}, aqui está o painel central:`, ...replyOptions });
-  } else {
-    return channel.send(replyOptions);
-  }
+  const content = targetUser ? `||${targetUser}||` : undefined;
+
+  channel.send({
+    content: content,
+    embeds: [embedPainel],
+    components: [row1, row2]
+  });
 };
 
-// Evento de Mensagem (Comandos de Prefixo)
+// Evento de Mensagem (Comandos via Chat)
 client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.guild) return;
-  if (!message.content.startsWith(PREFIX)) return;
+  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
-  // COMANDO: AJUDA / PAINEL
-  if (command === 'ajuda' || command === 'help' || command === 'painel') {
-    return enviarPainelCentral(message.channel, message.author);
+  // COMANDO !painel
+  if (command === 'painel') {
+    enviarPainelCentral(message.channel);
+    try { message.delete(); } catch(e) {}
   }
 
-  // COMANDO: KIT (NOVO SISTEMA)
-  if (command === 'kit') {
-    const acao = args[0]?.toLowerCase();
+  // COMANDO !ajuda
+  if (command === 'ajuda') {
+    const embedAjuda = new EmbedBuilder()
+      .setTitle('🐺 SISTEMA DE AJUDA — HUNTERS ERP v4.0')
+      .setDescription('Use o painel central interativo ou os comandos abaixo:')
+      .addFields(
+        { name: '`!painel`', value: 'Envia o painel interativo de controle.' },
+        { name: '`!estoque [quantidade]`', value: 'Define o aço total do baú (Requer Cargo Autorizado).' },
+        { name: '`!addaco [quantidade]`', value: 'Adiciona aço ao estoque (Requer Cargo Autorizado).' },
+        { name: '`!subaco [quantidade]`', value: 'Remove aço do estoque (Requer Cargo Autorizado).' },
+        { name: '`!caixa [quantidade]`', value: 'Define o dinheiro atual do caixa.' },
+        { name: '`!vender [membro] [arma] [quantidade]`', value: 'Registra uma venda, calcula comissão e retém o aço do clã.' },
+        { name: '`!entregarkit [membro]`', value: 'Entrega um kit de meta a um membro (gasta 3.260 kg de aço reservado).' },
+        { name: '`!farme [membro] [quantidade]`', value: 'Registra farme diário de aço direto para o estoque.' },
+        { name: '`!limpar`', value: 'Limpa o histórico de vendas (Requer Admin).' }
+      )
+      .setColor('#a855f7')
+      .setFooter({ text: 'HUNTERS BOT v4.0 ©' });
 
-    if (!acao) {
-      return message.reply(`⚠️ **Uso do Comando Kit:**\n\`${PREFIX}kit calcular\` - Calcula capacidade de kits\n\`${PREFIX}kit estoque\` - Detalha o estoque de kits\n\`${PREFIX}kit entregar <@membro>\` - Lança entrega de kit de meta\n\`${PREFIX}kit historico\` - Histórico de entregas`);
-    }
-
-    if (acao === 'calcular') {
-      const kits = calcularKitsDisponiveis();
-      const custoReal = db.config.kitMeta?.custo ?? 3260;
-      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
-
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('🎁 KIT DA META HUNTERS — CÁLCULO')
-            .setColor('#a855f7')
-            .addFields(
-              { name: '🛠️ Custo por Kit', value: `**${formatarNumero(custoReal)} Aços**`, inline: true },
-              { name: '📦 Kits disponíveis', value: `**${kits} kits**`, inline: true },
-              { name: '⛓️ Aço reservado (Baú)', value: `**${formatarNumero(acoKits)} kg**`, inline: true }
-            )
-            .setFooter({ text: 'Hunters ERP • Kit da Meta' })
-            .setTimestamp()
-        ]
-      });
-    }
-
-    if (acao === 'estoque') {
-      const kits = calcularKitsDisponiveis();
-      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
-      const entreguesTotal = db.kitsEntregues ? db.kitsEntregues.length : 0;
-
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('📦 ESTOQUE KIT META')
-            .setColor('#9333ea')
-            .addFields(
-              { name: '⛓️ Aço Kits', value: `**${formatarNumero(acoKits)} kg**`, inline: true },
-              { name: '🎁 Kits prontos', value: `**${kits} un**`, inline: true },
-              { name: '📜 Kits Entregues', value: `**${entreguesTotal} un**`, inline: true }
-            )
-            .setFooter({ text: 'Hunters ERP • Estoque de Kits' })
-            .setTimestamp()
-        ]
-      });
-    }
-
-    if (acao === 'entregar') {
-      const membro = message.mentions.members.first();
-      if (!membro) {
-        return message.reply('❌ **Erro de Sintaxe!** Marque o membro que recebeu o kit. Exemplo: `!kit entregar @membro`');
-      }
-
-      const custoReal = db.config.kitMeta?.custo ?? 3260;
-      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
-
-      if (acoKits < custoReal) {
-        return message.reply(`❌ **Aço Insuficiente!** Não existe aço de kits suficiente no baú para montar este kit. Necessário: **${formatarNumero(custoReal)} kg**, disponível: **${formatarNumero(acoKits)} kg**.`);
-      }
-
-      // Deduzir valores
-      db.estoqueKits = acoKits - custoReal;
-      db.estoqueVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * 0.7);
-      db.estoque = db.estoqueKits + db.estoqueVendas;
-
-      const novoKit = {
-        id: `K-${Date.now().toString().slice(-6)}`,
-        membro: membro.user.username,
-        userId: membro.id,
-        data: new Date().toISOString()
-      };
-
-      if (!db.kitsEntregues) db.kitsEntregues = [];
-      db.kitsEntregues.push(novoKit);
-      salvarBanco();
-
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('🎁 KIT ENTREGUE COM SUCESSO')
-            .setColor('#10b981')
-            .setDescription(`👤 **Membro:** ${membro}\n\n**Itens inclusos no Kit:**\n🔫 **AK-47** x1 *(2.700 kg)*\n🔫 **Glock 17** x1 *(120 kg)*\n📦 **Box 5.56** x3 *(360 kg)*\n📦 **Box Pistola** x2 *(80 kg)*\n\n🛠️ **Consumo Total:** **${formatarNumero(custoReal)} kg** do Aço de Kits.\nSaldo atual: **${formatarNumero(db.estoqueKits)} kg** reservado para Kits.`)
-            .setFooter({ text: `Transação ID: ${novoKit.id}` })
-            .setTimestamp()
-        ]
-      });
-    }
-
-    if (acao === 'historico') {
-      const historico = db.kitsEntregues || [];
-      if (historico.length === 0) {
-        return message.reply('❌ Nenhuma entrega de kit registrada até o momento.');
-      }
-
-      let listStr = '';
-      historico.slice(-10).reverse().forEach(k => {
-        listStr += `• ID: **${k.id}** | **${k.membro}** recebeu em *${new Date(k.data).toLocaleDateString('pt-BR')} ${new Date(k.data).toLocaleTimeString('pt-BR').slice(0, 5)}*\n`;
-      });
-
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('📜 HISTÓRICO DE ENTREGA DE KITS')
-            .setColor('#6b7280')
-            .setDescription(listStr)
-            .setFooter({ text: 'Mostrando os últimos 10 kits entregues' })
-            .setTimestamp()
-        ]
-      });
-    }
+    message.reply({ embeds: [embedAjuda] });
   }
 
-  // COMANDO: ESTOQUE
+  // COMANDO !estoque
   if (command === 'estoque') {
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * (pctKits / 100));
+    if (!temPermissaoEstoque(message.member)) {
+      return message.reply('❌ Você não tem permissão para alterar o estoque.');
+    }
+    const quant = parseInt(args[0]);
+    if (isNaN(quant)) return message.reply('❌ Uso correto: `!estoque [quantidade]`');
+    
+    db.estoque = quant;
+    db.estoqueKits = Math.floor(quant * (db.config.percentSteelForKits / 100));
+    db.estoqueVendas = quant - db.estoqueKits;
+    salvarBanco();
+    message.reply(`✅ Estoque total reajustado para **${formatarNumero(quant)} kg** (Vendas: ${formatarNumero(db.estoqueVendas)} kg | Kits: ${formatarNumero(db.estoqueKits)} kg).`);
+  }
+
+  // COMANDO !addaco
+  if (command === 'addaco') {
+    if (!temPermissaoEstoque(message.member)) {
+      return message.reply('❌ Você não tem permissão para alterar o estoque.');
+    }
+    const quant = parseInt(args[0]);
+    if (isNaN(quant) || quant <= 0) return message.reply('❌ Uso correto: `!addaco [quantidade]`');
+
+    db.estoque += quant;
+    const addKits = Math.floor(quant * (db.config.percentSteelForKits / 100));
+    const addVendas = quant - addKits;
+
+    db.estoqueKits += addKits;
+    db.estoqueVendas += addVendas;
+    
+    salvarBanco();
+    message.reply(`✅ Adicionados **${formatarNumero(quant)} kg** de aço ao baú! (${db.config.percentSteelForKits}% destinado a Kits, ${db.config.percentSteelForSales}% a Vendas)`);
+  }
+
+  // COMANDO !subaco
+  if (command === 'subaco') {
+    if (!temPermissaoEstoque(message.member)) {
+      return message.reply('❌ Você não tem permissão para alterar o estoque.');
+    }
+    const quant = parseInt(args[0]);
+    if (isNaN(quant) || quant <= 0) return message.reply('❌ Uso correto: `!subaco [quantidade]`');
+
+    if (db.estoque < quant) return message.reply('❌ Estoque insuficiente!');
+
+    db.estoque -= quant;
+    const subKits = Math.floor(quant * (db.config.percentSteelForKits / 100));
+    const subVendas = quant - subKits;
+
+    db.estoqueKits = Math.max(0, db.estoqueKits - subKits);
+    db.estoqueVendas = Math.max(0, db.estoqueVendas - subVendas);
+
+    salvarBanco();
+    message.reply(`✅ Retirados **${formatarNumero(quant)} kg** de aço do baú.`);
+  }
+
+  // COMANDO !caixa
+  if (command === 'caixa') {
+    const quant = parseInt(args[0]);
+    if (isNaN(quant)) return message.reply('❌ Uso correto: `!caixa [quantidade]`');
+    db.caixa = quant;
+    salvarBanco();
+    message.reply(`✅ Caixa do Clã atualizado para **${formatarMoeda(quant)}**`);
+  }
+
+  // COMANDO !limpar
+  if (command === 'limpar') {
+    if (!message.member.permissions.has('Administrator')) {
+      return message.reply('❌ Apenas Administradores podem limpar o histórico.');
+    }
+    db.vendas = [];
+    db.farmes = [];
+    db.kitsEntregues = [];
+    salvarBanco();
+    message.reply('🧹 Todo o histórico do ERP foi limpo com sucesso.');
+  }
+
+  // COMANDO !farme
+  if (command === 'farme') {
+    const targetUser = message.mentions.users.first();
+    const quant = parseInt(args[1]);
+    if (!targetUser || isNaN(quant) || quant <= 0) {
+      return message.reply('❌ Uso correto: `!farme [@membro] [quantidade]`');
+    }
+
+    if (!db.farmes) db.farmes = [];
+    db.farmes.push({
+      userId: targetUser.id,
+      userName: targetUser.username,
+      quantidade: quant,
+      data: new Date().toLocaleDateString('pt-BR')
+    });
+
+    db.estoque += quant;
+    const addKits = Math.floor(quant * (db.config.percentSteelForKits / 100));
+    const addVendas = quant - addKits;
+    db.estoqueKits += addKits;
+    db.estoqueVendas += addVendas;
+
+    salvarBanco();
+    message.reply(`⛏️ **Farme Registrado!** **${targetUser.username}** enviou **${formatarNumero(quant)} kg** de aço direto para o estoque!`);
+  }
+
+  // COMANDO !entregarkit
+  if (command === 'entregarkit') {
+    const targetUser = message.mentions.users.first();
+    if (!targetUser) {
+      return message.reply('❌ Uso correto: `!entregarkit [@membro]`');
+    }
+
+    const custo = db.config.kitMeta.custo; // 3.260
+    if (db.estoqueKits < custo) {
+      return message.reply(`❌ Estoque de Kits insuficiente! Necessário **${formatarNumero(custo)} kg** de aço reservado para kits (Atual: ${formatarNumero(db.estoqueKits)} kg).`);
+    }
+
+    db.estoqueKits -= custo;
+    db.estoque -= custo;
+    db.kitsEntregues.push({
+      userId: targetUser.id,
+      userName: targetUser.username,
+      data: new Date().toLocaleDateString('pt-BR')
+    });
+
+    salvarBanco();
+
+    const embedKit = new EmbedBuilder()
+      .setTitle('🎁 KIT META SEMANAL ENTREGUE!')
+      .setDescription(`O administrador enviou o Kit para **${targetUser.username}**!`)
+      .addFields(
+        { name: '🎁 Itens Inclusos', value: '🔫 AK-47 x1\n🔫 Glock 17 x1\n📦 Box 5.56 x3\n📦 Box Pistola x2' },
+        { name: '📉 Custo do Kit', value: `\`${formatarNumero(custo)} kg\` de aço consumidos da Reserva.` }
+      )
+      .setColor('#10b981')
+      .setTimestamp();
+
+    message.reply({ embeds: [embedKit] });
+  }
+
+  // COMANDO !vender
+  if (command === 'vender') {
+    const targetUser = message.mentions.users.first() || message.author;
+    const armaKey = args[1]?.toLowerCase();
+    const quant = parseInt(args[2]) || 1;
+
+    if (!armaKey || !ARMAS[armaKey]) {
+      return message.reply(`❌ Uso correto: \`!vender [@membro] [${Object.keys(ARMAS).join('/')}] [quantidade]\``);
+    }
+
+    const arma = ARMAS[armaKey];
+    const valorVenda = arma.preco * quant;
+    const acoConsumido = arma.aco * quant;
+
+    if (db.estoqueVendas < acoConsumido) {
+      return message.reply(`❌ Estoque reservado para vendas insuficiente! Necessário **${formatarNumero(acoConsumido)} kg** de aço para fabricar as armas.`);
+    }
+
+    // Divisão de lucros
+    const split = db.config.splitPercent;
+    const comissaoMembro = valorVenda * (split / 100);
+    const lucroClan = valorVenda - comissaoMembro;
+
+    // Ajustes de Estoque e Caixa
+    db.estoqueVendas -= acoConsumido;
+    db.estoque -= acoConsumido;
+    db.caixa += lucroClan;
+
+    db.vendas.push({
+      userId: targetUser.id,
+      userName: targetUser.username,
+      arma: arma.nome,
+      quantidade: quant,
+      total: valorVenda,
+      comissao: comissaoMembro,
+      aco: acoConsumido,
+      data: new Date().toLocaleDateString('pt-BR')
+    });
+
+    salvarBanco();
+
+    const embedVenda = new EmbedBuilder()
+      .setTitle('🛒 VENDA REGISTRADA COM SUCESSO')
+      .setDescription(`Armas fabricadas e vendidas com sucesso para a facção!`)
+      .addFields(
+        { name: '👤 Vendedor', value: `${targetUser.username}`, inline: true },
+        { name: '🔫 Armas Vendidas', value: `${arma.icon} ${quant}x ${arma.nome}`, inline: true },
+        { name: '💰 Total Venda', value: `**${formatarMoeda(valorVenda)}**`, inline: true },
+        { name: '🏦 Lucro Clã', value: `\`${formatarMoeda(lucroClan)}\` (${100 - split}%)`, inline: true },
+        { name: '💸 Comissão Membro', value: `\`${formatarMoeda(comissaoMembro)}\` (${split}%)`, inline: true },
+        { name: '⛓️ Aço Consumido', value: `\`${formatarNumero(acoConsumido)} kg\` de Aço Vendas`, inline: true }
+      )
+      .setColor('#10b981')
+      .setFooter({ text: 'HUNTERS BOT v4.0 ©' })
+      .setTimestamp();
+
+    message.reply({ embeds: [embedVenda] });
+  }
+});
+
+// Evento de Clique nos Botões de Interação (Modais e Respostas)
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const member = interaction.member;
+
+  // 1. CONSULTAR ESTOQUE
+  if (interaction.customId === 'painel_estoque') {
+    const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
     const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
     const kitsProntos = calcularKitsDisponiveis();
 
-    const embedEstoque = new EmbedBuilder()
-      .setTitle('📦 ESTOQUE GERAL — HUNTERS')
-      .setColor('#9333ea')
+    const embed = new EmbedBuilder()
+      .setTitle('📦 RELATÓRIO DETALHADO DO ESTOQUE')
+      .setDescription('Status real do aço armazenado no baú da facção:')
       .addFields(
-        { name: '⛓️ Total no Baú', value: `**${formatarNumero(db.estoque)} kg**`, inline: false },
-        { name: '🔫 Reservado p/ Vendas', value: `**${formatarNumero(acoVendas)} kg** (${pctSales}%)`, inline: true },
-        { name: '⚙️ Reservado p/ Kits', value: `**${formatarNumero(acoKits)} kg** (${pctKits}%)`, inline: true },
-        { name: '📦 Kits Prontos Disponíveis', value: `**${formatarNumero(kitsProntos)} un** (Custo: ${formatarNumero(db.config.kitMeta?.custo ?? 3260)}kg/kit da meta)`, inline: false }
-      );
-
-    let producaoStr = '';
-    Object.keys(ARMAS).forEach(key => {
-      const arma = ARMAS[key];
-      const maxFabricavel = Math.floor(acoVendas / arma.aco);
-      producaoStr += `${arma.icon} **${arma.nome}**: ${formatarNumero(maxFabricavel)} un *(Custo: ${formatarNumero(arma.aco)}kg de aço de vendas)*\n`;
-    });
-    embedEstoque.addFields({ name: '🛠️ Capacidade de Venda de Armas', value: producaoStr });
-
-    return message.reply({ embeds: [embedEstoque] });
-  }
-
-  // COMANDO: CAIXA
-  if (command === 'caixa' || command === 'cofre') {
-    const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
-    const embedCaixa = new EmbedBuilder()
-      .setTitle('💰 CAIXA COFRE HUNTERS')
-      .setColor('#10b981')
-      .addFields(
-        { name: '💵 Saldo em Caixa', value: `**${formatarMoeda(db.caixa)}**` },
-        { name: '📈 Total Faturado', value: `**${formatarMoeda(totalVendido)}**`, inline: true },
-        { name: '📜 Vendas Registradas', value: `**${db.vendas.length} transações**`, inline: true }
+        { name: '⛓️ Aço Total', value: `\`${formatarNumero(db.estoque)} kg\``, inline: false },
+        { name: '🔫 Reserva para Vendas', value: `\`${formatarNumero(acoVendas)} kg\` (${db.config.percentSteelForSales || 70}%)`, inline: true },
+        { name: '🎁 Reserva para Kits', value: `\`${formatarNumero(acoKits)} kg\` (${db.config.percentSteelForKits || 30}%)`, inline: true },
+        { name: '📦 Kits de Metas Prontos', value: `**${formatarNumero(kitsProntos)} Kits** de Meta`, inline: false }
       )
-      .setTimestamp();
-    return message.reply({ embeds: [embedCaixa] });
-  }
-
-  // COMANDO: VENDER
-  if (command === 'vender' || command === 'venda') {
-    const membro = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
-    const armaChave = args[1]?.toLowerCase();
-    const quantidade = parseInt(args[2]);
-    const desconto = parseInt(args[3]) || 0;
-
-    if (!membro || !armaChave || isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ **Formato incorreto!** Use:\n\`${PREFIX}vender <@membro|ID> <ak47|awp|m16|sawedoff|glock17> <quantidade> [desconto_porcentagem]\``);
-    }
-
-    const arma = ARMAS[armaChave];
-    if (!arma) {
-      return message.reply(`❌ **Arma inválida!** Opções: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\``);
-    }
-
-    const acoNecessario = arma.aco * quantidade;
-    const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * ((db.config.percentSteelForSales || 70) / 100));
-
-    if (acoVendas < acoNecessario) {
-      return message.reply(`❌ **Aço para Vendas Insuficiente!** É necessário **${formatarNumero(acoNecessario)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`);
-    }
-
-    const precoBase = arma.preco * quantidade;
-    const valorDesconto = precoBase * (desconto / 100);
-    const totalVenda = precoBase - valorDesconto;
-    const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
-    const lucroClas = totalVenda - comissaoVendedor;
-
-    // Atualizar Estoques Deduzindo do Aço de Vendas
-    db.estoqueVendas = acoVendas - acoNecessario;
-    db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
-    db.estoque = db.estoqueKits + db.estoqueVendas;
-    db.caixa += lucroClas;
-
-    const novaVenda = {
-      id: `V-${Date.now().toString().slice(-6)}`,
-      timestamp: new Date().toISOString(),
-      userId: membro.id,
-      userName: membro.user.username,
-      arma: arma.nome,
-      quantidade,
-      total: totalVenda,
-      desconto,
-      comissao: comissaoVendedor,
-      acoConsumido: acoNecessario
-    };
-
-    db.vendas.push(novaVenda);
-    salvarBanco();
-
-    const embedSucesso = new EmbedBuilder()
-      .setTitle('🎯 VENDA REGISTRADA COM SUCESSO')
-      .setColor('#10b981')
-      .addFields(
-        { name: '👤 Vendedor', value: `${membro}`, inline: true },
-        { name: '🔫 Armamento', value: `**${quantidade}x ${arma.nome}**`, inline: true },
-        { name: '📉 Desconto', value: `**${desconto}%**`, inline: true },
-        { name: '💰 Total Pago', value: `**${formatarMoeda(totalVenda)}**` },
-        { name: '💸 Split Vendedor (Comissão)', value: `**${formatarMoeda(comissaoVendedor)}** (${db.config.splitPercent}%)`, inline: true },
-        { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}** (${100 - db.config.splitPercent}%)`, inline: true },
-        { name: '⛓️ Aço de Vendas Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
-      )
-      .setFooter({ text: `ID da Transação: ${novaVenda.id}` })
-      .setTimestamp();
-
-    return message.reply({ embeds: [embedSucesso] });
-  }
-
-  // COMANDO: RANKING
-  if (command === 'ranking') {
-    if (db.vendas.length === 0) {
-      return message.reply('🏆 **Ranking Vazio!** Nenhuma venda foi registrada neste ciclo.');
-    }
-
-    const rankingUser = {};
-    db.vendas.forEach(v => {
-      if (!rankingUser[v.userName]) rankingUser[v.userName] = { total: 0, count: 0 };
-      rankingUser[v.userName].total += v.total;
-      rankingUser[v.userName].count += v.quantidade;
-    });
-
-    const rankingOrdenado = Object.keys(rankingUser).map(userName => ({
-      userName,
-      total: rankingUser[userName].total,
-      count: rankingUser[userName].count
-    })).sort((a, b) => b.total - a.total);
-
-    let rankingStr = '';
-    rankingOrdenado.slice(0, 10).forEach((user, index) => {
-      const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`;
-      rankingStr += `${medal} **${user.userName}** — Faturamento: \`${formatarMoeda(user.total)}\` *(Qtd: ${user.count} armas)*\n`;
-    });
-
-    const embedRanking = new EmbedBuilder()
-      .setTitle('🏆 RANKING DE ELITE — HUNTERS')
-      .setColor('#f59e0b')
-      .setDescription(rankingStr)
-      .setTimestamp();
-
-    return message.reply({ embeds: [embedRanking] });
-  }
-
-  // COMANDO: METAS
-  if (command === 'metas' || command === 'meta') {
-    const embedMetas = obterMetasEmbed();
-    return message.reply({ embeds: [embedMetas] });
-  }
-
-  // COMANDO: HISTORICO / LOGS
-  if (command === 'historico' || command === 'logs') {
-    if (db.vendas.length === 0) {
-      return message.reply('📑 Nenhuma transação registrada até o momento.');
-    }
-
-    const ultimasVendas = db.vendas.slice(-10).reverse();
-    let listStr = '';
-    ultimasVendas.forEach(v => {
-      listStr += `• **${v.id}** | **${v.userName}** vendeu **${v.quantidade}x ${v.arma}** por \`${formatarMoeda(v.total)}\` *(Desconto: ${v.desconto}% | Aço: -${formatarNumero(v.acoConsumido)}kg)*\n`;
-    });
-
-    const embedLogs = new EmbedBuilder()
-      .setTitle('📑 ÚLTIMAS TRANSAÇÕES — ERP HUNTERS')
-      .setColor('#6b7280')
-      .setDescription(listStr)
-      .setTimestamp();
-
-    return message.reply({ embeds: [embedLogs] });
-  }
-
-  // COMANDO: FARME / REGISTRAR_META
-  if (command === 'farme' || command === 'farm' || command === 'registrar' || command === 'registrar_meta') {
-    const quantidade = parseInt(args[0]);
-    if (isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ **Uso correto:** \`${PREFIX}farme <quantidade_em_kg>\`\nExemplo: \`${PREFIX}farme 2500\``);
-    }
-
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const addKits = Math.floor(quantidade * (pctKits / 100));
-    const addSales = quantidade - addKits;
-
-    db.estoqueKits = (db.estoqueKits || 0) + addKits;
-    db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-    db.estoque += quantidade;
-
-    if (!db.farmes) db.farmes = [];
-    const novoFarme = {
-      id: `F-${Date.now().toString().slice(-6)}`,
-      timestamp: new Date().toISOString(),
-      userId: message.author.id,
-      userName: message.author.username,
-      quantidade
-    };
-    db.farmes.push(novoFarme);
-    salvarBanco();
-
-    // Responder ao usuário com confirmação
-    await message.reply(`🚜 **Farme registrado com sucesso!** Foram adicionados **+${formatarNumero(quantidade)} kg** ao baú.`);
-
-    // Enviar registro para o canal de ID 1525698045537161226
-    const canalLogId = '1525698045537161226';
-    let canalLog = client.channels.cache.get(canalLogId);
-    if (!canalLog) {
-      try {
-        canalLog = await client.channels.fetch(canalLogId);
-      } catch (e) {
-        console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
-      }
-    }
-
-    const embedLog = new EmbedBuilder()
-      .setTitle('🚜 REGISTRO DE FARME DIÁRIO')
-      .setColor('#10b981')
-      .setDescription(`👤 **Membro:** ${message.author} (${message.author.username})\n📦 **Quantidade:** **${formatarNumero(quantidade)} kg** de aço\n📅 **Data:** <t:${Math.floor(Date.now() / 1000)}:f>`)
-      .setTimestamp();
-
-    if (canalLog) {
-      await canalLog.send({ embeds: [embedLog] }).catch(err => {
-        console.error('Erro ao enviar mensagem para o canal de log:', err);
-      });
-    }
-
-    // Publicar aviso público no canal da ação
-    const embedPublico = new EmbedBuilder()
-      .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
       .setColor('#a855f7')
-      .setDescription(`👤 O membro ${message.author} registrou **${formatarNumero(quantidade)} kg** de aço no baú!`)
       .setTimestamp();
 
-    return message.channel.send({ embeds: [embedPublico] });
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
-  // COMANDO ADMIN: ADDACO
-  if (command === 'addaco') {
-    if (!temPermissaoEstoque(message.member)) {
-      return message.reply(`❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem adicionar aço.`);
-    }
+  // 2. CAIXA DO CLÃ
+  if (interaction.customId === 'painel_caixa') {
+    const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
+    const split = db.config.splitPercent;
 
-    const quantidade = parseInt(args[0]);
-    if (isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ Use o formato: \`${PREFIX}addaco <kg>\``);
-    }
+    const embed = new EmbedBuilder()
+      .setTitle('🏦 FLUXO FINANCEIRO DO CLÃ')
+      .addFields(
+        { name: '💰 Saldo em Caixa', value: `**${formatarMoeda(db.caixa)}**`, inline: false },
+        { name: '🛒 Bruto Vendido (Histórico)', value: `\`${formatarMoeda(totalVendido)}\``, inline: true },
+        { name: '📈 Divisão', value: `🏦 **${100 - split}%** Clã | 💸 **${split}%** Membro`, inline: true }
+      )
+      .setColor('#a855f7')
+      .setTimestamp();
 
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const addKits = Math.floor(quantidade * (pctKits / 100));
-    const addSales = quantidade - addKits;
-
-    db.estoqueKits = (db.estoqueKits || 0) + addKits;
-    db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-    db.estoque += quantidade;
-    salvarBanco();
-
-    return message.reply(`⛓️ **Estoque Abastecido!** Foram adicionados **+${formatarNumero(quantidade)} kg** ao baú. Distribuído proporcionalmente:\n📥 **+${formatarNumero(addSales)} kg** para Vendas\n📥 **+${formatarNumero(addKits)} kg** para Kits.`);
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
-  // COMANDO ADMIN: SUBACO
-  if (command === 'subaco' || command === 'sub') {
-    if (!temPermissaoEstoque(message.member)) {
-      return message.reply(`❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem retirar aço.`);
+  // 3. REGISTRAR META (Apenas Admin/Cargo Autorizado)
+  if (interaction.customId === 'painel_registrar_meta') {
+    if (!temPermissaoEstoque(member)) {
+      return interaction.reply({ content: '❌ Você não tem o cargo autorizado para entregar Kits de Meta semanal.', ephemeral: true });
     }
 
-    const quantidade = parseInt(args[0]);
-    if (isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ Use o formato: \`${PREFIX}subaco <kg>\``);
-    }
+    const modal = new ModalBuilder()
+      .setCustomId('modal_registrar_meta')
+      .setTitle('🎯 Entregar Kit da Meta');
 
-    if (db.estoque < quantidade) {
-      return message.reply(`❌ **Quantidade insuficiente!** O baú possui apenas **${formatarNumero(db.estoque)} kg**.`);
-    }
+    const inputUser = new TextInputBuilder()
+      .setCustomId('meta_user')
+      .setLabel('ID do Membro (ou @Membro)')
+      .setPlaceholder('Ex: @Maozinha ou ID Discord')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
 
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const subKits = Math.floor(quantidade * (pctKits / 100));
-    const subSales = quantidade - subKits;
-
-    db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
-    db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSales);
-    db.estoque = db.estoqueKits + db.estoqueVendas;
-    salvarBanco();
-
-    return message.reply(`⛓️ **Retirada Efetuada!** Removidos **-${formatarNumero(quantidade)} kg** proporcionalmente do baú (Vendas: -${formatarNumero(subSales)}kg, Kits: -${formatarNumero(subKits)}kg).`);
+    modal.addComponents(new ActionRowBuilder().addComponents(inputUser));
+    return interaction.showModal(modal);
   }
 
-  // COMANDO ADMIN: LIMPAR
-  if (command === 'limpar') {
-    if (!message.member.permissions.has('Administrator')) {
-      return message.reply('❌ Apenas administradores do servidor podem resetar os logs de vendas.');
+  // 4. ADICIONAR AÇO (Apenas Autorizado)
+  if (interaction.customId === 'painel_addaco') {
+    if (!temPermissaoEstoque(member)) {
+      return interaction.reply({ content: '❌ Você não tem o cargo autorizado para alterar o estoque no Baú.', ephemeral: true });
     }
 
-    db.vendas = [];
-    db.kitsEntregues = [];
-    db.farmes = [];
-    db.estoque = 69000;
-    db.estoqueKits = 20700;
-    db.estoqueVendas = 48300;
-    db.caixa = 280000;
-    salvarBanco();
+    const modal = new ModalBuilder()
+      .setCustomId('modal_addaco')
+      .setTitle('➕ Adicionar Aço ao Baú');
 
-    return message.reply('🧹 **Ciclo Resetado!** Todos os logs de vendas e kits entregues foram apagados e os valores retornaram ao padrão de fábrica (69.000 kg aço total com divisão 30/70, R$ 280.000 caixa).');
+    const inputQtd = new TextInputBuilder()
+      .setCustomId('addaco_quantidade')
+      .setLabel('Quantidade de Aço (em kg)')
+      .setPlaceholder('Ex: 5000')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(inputQtd));
+    return interaction.showModal(modal);
+  }
+
+  // 5. RETIRAR AÇO (Apenas Autorizado)
+  if (interaction.customId === 'painel_subaco') {
+    if (!temPermissaoEstoque(member)) {
+      return interaction.reply({ content: '❌ Você não tem o cargo autorizado para alterar o estoque no Baú.', ephemeral: true });
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId('modal_subaco')
+      .setTitle('➖ Retirar Aço do Baú');
+
+    const inputQtd = new TextInputBuilder()
+      .setCustomId('subaco_quantidade')
+      .setLabel('Quantidade de Aço (em kg)')
+      .setPlaceholder('Ex: 3000')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(inputQtd));
+    return interaction.showModal(modal);
+  }
+
+  // 6. REGISTRAR VENDA
+  if (interaction.customId === 'painel_venda') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_venda')
+      .setTitle('💰 Registrar Venda de Armamentos');
+
+    const inputArma = new TextInputBuilder()
+      .setCustomId('venda_arma')
+      .setLabel('Código da Arma')
+      .setPlaceholder(`Ex: ak47, m16, glock17, awp, sawedoff`)
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const inputQtd = new TextInputBuilder()
+      .setCustomId('venda_quantidade')
+      .setLabel('Quantidade Vendida')
+      .setPlaceholder('Ex: 1')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
+
+    const inputUser = new TextInputBuilder()
+      .setCustomId('venda_membro')
+      .setLabel('Nome ou @ do Vendedor')
+      .setPlaceholder('Deixe vazio para você mesmo')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(inputArma),
+      new ActionRowBuilder().addComponents(inputQtd),
+      new ActionRowBuilder().addComponents(inputUser)
+    );
+    return interaction.showModal(modal);
+  }
+
+  // 7. CONSULTAR RECOMPENSA DE KITS
+  if (interaction.customId === 'painel_kits') {
+    const meta = db.config.kitMeta.meta;
+    const custo = db.config.kitMeta.custo;
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎁 KIT COMPLETO DA META HUNTERS')
+      .setDescription(`Para cada **${formatarNumero(meta)} kg** de aço acumulados, você ganha o Kit semanal!`)
+      .addFields(
+        { name: '🔫 Armamento Principal', value: '🔫 AK-47 x1', inline: true },
+        { name: '🔫 Armamento Secundário', value: '🔫 Glock 17 x1', inline: true },
+        { name: '📦 Suprimentos Extras', value: '📦 Box 5.56 x3\n📦 Box Pistola x2', inline: false },
+        { name: '⚙️ Custo do Kit para a Facção', value: `\`${formatarNumero(custo)} kg\` de aço por entrega.`, inline: false }
+      )
+      .setColor('#a855f7')
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // 8. METAS GERAIS
+  if (interaction.customId === 'painel_metas') {
+    const embedMetas = obterMetasEmbed();
+    return interaction.reply({ embeds: [embedMetas], ephemeral: true });
+  }
+
+  // 9. RANKING
+  if (interaction.customId === 'painel_ranking') {
+    const statsMap = {};
+    db.vendas.forEach(v => {
+      const key = v.userName || 'Membro';
+      if (!statsMap[key]) statsMap[key] = { aco: 0, total: 0 };
+      statsMap[key].aco += (v.acoConsumido || 0);
+      statsMap[key].total += v.total;
+    });
+
+    if (db.farmes) {
+      db.farmes.forEach(f => {
+        const key = f.userName || 'Membro';
+        if (!statsMap[key]) statsMap[key] = { aco: 0, total: 0 };
+        statsMap[key].aco += (f.quantidade || 0);
+      });
+    }
+
+    const ranking = Object.entries(statsMap)
+      .sort((a, b) => b[1].aco - a[1].aco)
+      .slice(0, 10);
+
+    let rankList = "";
+    ranking.forEach(([name, stats], index) => {
+      const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : "👤";
+      rankList += `${medal} **${index + 1}º ${name}** — Fabricou/Entregou **${formatarNumero(stats.aco)} kg** (Vendas: ${formatarMoeda(stats.total)})\n`;
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle('🏆 RANKING DE PRODUTIVIDADE HUNTERS')
+      .setDescription(rankList || 'Nenhum membro registrado no ranking ainda.')
+      .setColor('#a855f7')
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // 10. HISTÓRICO
+  if (interaction.customId === 'painel_historico') {
+    const ultimasVendas = db.vendas.slice(-5).reverse();
+    const ultimosKits = db.kitsEntregues ? db.kitsEntregues.slice(-3).reverse() : [];
+    
+    let logs = "**🛒 Últimas Vendas Registradas:**\n";
+    if (ultimasVendas.length === 0) logs += "*Nenhuma venda recente.*\n";
+    ultimasVendas.forEach(v => {
+      logs += `• \`${v.data}\` - **${v.userName}** vendeu ${v.quantidade}x **${v.arma}** | Comissão: \`${formatarMoeda(v.comissao)}\`\n`;
+    });
+
+    logs += "\n**🎁 Últimas Entregas de Kits da Meta:**\n";
+    if (ultimosKits.length === 0) logs += "*Nenhum kit entregue recentemente.*\n";
+    ultimosKits.forEach(k => {
+      logs += `• \`${k.data}\` - Kit Meta enviado para **${k.userName}**\n`;
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle('📜 ÚLTIMAS ATIVIDADES DO ERP')
+      .setDescription(logs)
+      .setColor('#a855f7')
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 });
 
-// Manipulador de Interações (Botões e Modais)
+// Resposta aos Envios de Modais
 client.on('interactionCreate', async (interaction) => {
-  if (interaction.isButton()) {
-    const customId = interaction.customId;
+  if (!interaction.isModalSubmit()) return;
 
-    // BOTÃO: CONSULTAR ESTOQUE
-    if (customId === 'painel_estoque') {
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * (pctKits / 100));
-      const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
-      const kitsProntos = calcularKitsDisponiveis();
+  // MODAL: ADICIONAR AÇO
+  if (interaction.customId === 'modal_addaco') {
+    const qtdStr = interaction.fields.getTextInputValue('addaco_quantidade');
+    const quant = parseInt(qtdStr);
 
-      const embedEstoque = new EmbedBuilder()
-        .setTitle('⛓️ CONSULTA RÁPIDA: ESTOQUE')
-        .setColor('#9333ea')
-        .addFields(
-          { name: 'Aço Total no Baú', value: `\`${formatarNumero(db.estoque)} kg\``, inline: false },
-          { name: 'Aço p/ Vendas', value: `\`${formatarNumero(acoVendas)} kg\` (${pctSales}%)`, inline: true },
-          { name: 'Aço p/ Kits', value: `\`${formatarNumero(acoKits)} kg\` (${pctKits}%)`, inline: true },
-          { name: 'Kits Prontos Disponíveis', value: `\`${formatarNumero(kitsProntos)} un\``, inline: false }
-        );
-
-      return interaction.reply({ embeds: [embedEstoque], ephemeral: true });
+    if (isNaN(quant) || quant <= 0) {
+      return interaction.reply({ content: '❌ Erro: Por favor insira um número válido maior que zero.', ephemeral: true });
     }
 
-    // BOTÃO: KITS META
-    if (customId === 'painel_kits') {
-      const kits = calcularKitsDisponiveis();
-      const custoReal = db.config.kitMeta?.custo ?? 3260;
+    db.estoque += quant;
+    const addKits = Math.floor(quant * (db.config.percentSteelForKits / 100));
+    const addVendas = quant - addKits;
 
-      return interaction.reply({
-        ephemeral: true,
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('🎁 KIT DA META HUNTERS')
-            .setColor('#a855f7')
-            .setDescription(`🏆 **Meta Semanal:** 8.000 Aços\n\n🎁 **Composição do Kit:**\n🔫 **AK-47** x1\n🔫 **Glock 17** x1\n📦 **Box 5.56** x3\n📦 **Box Pistola** x2\n\n🛠️ **Custo Real:** \`${formatarNumero(custoReal)} Aços\`\n\n📦 **Disponíveis:** \`${kits} kits\` prontos para entrega no estoque do baú.`)
-        ]
+    db.estoqueKits += addKits;
+    db.estoqueVendas += addVendas;
+    
+    salvarBanco();
+
+    await interaction.reply({ content: `✅ Sucesso! **${formatarNumero(quant)} kg** adicionados ao baú.`, ephemeral: true });
+    
+    // Atualiza o painel operacional no canal atual
+    try {
+      interaction.channel.messages.fetch({ limit: 10 }).then(messages => {
+        const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].description.includes('HUNTERS'));
+        if (botMsg) {
+          botMsg.delete();
+          enviarPainelCentral(interaction.channel);
+        }
       });
-    }
-
-    // BOTÃO: CAIXA
-    if (customId === 'painel_caixa') {
-      const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
-      const embedCaixa = new EmbedBuilder()
-        .setTitle('💰 CONSULTA RÁPIDA: COFRE')
-        .setColor('#10b981')
-        .addFields(
-          { name: 'Saldo em Caixa', value: `**${formatarMoeda(db.caixa)}**` },
-          { name: 'Faturamento de Vendas', value: `\`${formatarMoeda(totalVendido)}\`` }
-        );
-
-      return interaction.reply({ embeds: [embedCaixa], ephemeral: true });
-    }
-
-    // BOTÃO: RANKING
-    if (customId === 'painel_ranking') {
-      if (db.vendas.length === 0) {
-        return interaction.reply({ content: '🏆 Nenhum dado de vendas registrado para gerar o ranking ainda.', ephemeral: true });
-      }
-
-      const rankingUser = {};
-      db.vendas.forEach(v => {
-        if (!rankingUser[v.userName]) rankingUser[v.userName] = { total: 0 };
-        rankingUser[v.userName].total += v.total;
-      });
-
-      const rankingOrdenado = Object.keys(rankingUser).map(userName => ({
-        userName,
-        total: rankingUser[userName].total
-      })).sort((a, b) => b.total - a.total);
-
-      let rankingStr = '';
-      rankingOrdenado.slice(0, 5).forEach((user, index) => {
-        const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`;
-        rankingStr += `${medal} **${user.userName}**: ${formatarMoeda(user.total)}\n`;
-      });
-
-      const embedRanking = new EmbedBuilder()
-        .setTitle('🏆 TOP 5 VENDEDORES')
-        .setColor('#f59e0b')
-        .setDescription(rankingStr);
-
-      return interaction.reply({ embeds: [embedRanking], ephemeral: true });
-    }
-
-    // BOTÃO: METAS
-    if (customId === 'painel_metas') {
-      const embedMetas = obterMetasEmbed();
-      return interaction.reply({ embeds: [embedMetas], ephemeral: true });
-    }
-
-    // BOTÃO: HISTÓRICO
-    if (customId === 'painel_historico') {
-      if (db.vendas.length === 0) {
-        return interaction.reply({ content: '📑 Nenhuma transação recente encontrada.', ephemeral: true });
-      }
-
-      const ultimasVendas = db.vendas.slice(-6).reverse();
-      let listStr = '';
-      ultimasVendas.forEach(v => {
-        listStr += `• **${v.id}** | **${v.userName}** vendeu **${v.quantidade}x ${v.arma}** por \`${formatarMoeda(v.total)}\`\n`;
-      });
-
-      const embedLogs = new EmbedBuilder()
-        .setTitle('📑 HISTÓRICO RECENTE')
-        .setColor('#6b7280')
-        .setDescription(listStr);
-
-      return interaction.reply({ embeds: [embedLogs], ephemeral: true });
-    }
-
-    // BOTÃO: ADICIONAR AÇO (Abre Modal)
-    if (customId === 'painel_addaco') {
-      if (!temPermissaoEstoque(interaction.member)) {
-        return interaction.reply({ 
-          content: `❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem adicionar aço ao baú.`, 
-          ephemeral: true 
-        });
-      }
-
-      const modal = new ModalBuilder()
-        .setCustomId('modal_addaco')
-        .setTitle('➕ ADICIONAR AÇO');
-
-      const inputAco = new TextInputBuilder()
-        .setCustomId('aco_quantidade')
-        .setLabel('Quantidade de Aço (em kg)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 5000')
-        .setRequired(true);
-
-      const row = new ActionRowBuilder().addComponents(inputAco);
-      modal.addComponents(row);
-
-      return interaction.showModal(modal);
-    }
-
-    // BOTÃO: RETIRAR AÇO (Abre Modal)
-    if (customId === 'painel_subaco') {
-      if (!temPermissaoEstoque(interaction.member)) {
-        return interaction.reply({ 
-          content: `❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem retirar aço do baú.`, 
-          ephemeral: true 
-        });
-      }
-
-      const modal = new ModalBuilder()
-        .setCustomId('modal_subaco')
-        .setTitle('➖ RETIRAR AÇO');
-
-      const inputAco = new TextInputBuilder()
-        .setCustomId('aco_quantidade')
-        .setLabel('Quantidade de Aço (em kg)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 5000')
-        .setRequired(true);
-
-      const row = new ActionRowBuilder().addComponents(inputAco);
-      modal.addComponents(row);
-
-      return interaction.showModal(modal);
-    }
-
-    // BOTÃO: REGISTRAR META / FARME (Abre Modal)
-    if (customId === 'painel_registrar_meta') {
-      const modal = new ModalBuilder()
-        .setCustomId('modal_registrar_meta')
-        .setTitle('🎯 REGISTRAR FARME DIÁRIO');
-
-      const inputAco = new TextInputBuilder()
-        .setCustomId('farme_quantidade')
-        .setLabel('Quantidade de Aço Farmado (em kg)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 2500')
-        .setRequired(true);
-
-      const row = new ActionRowBuilder().addComponents(inputAco);
-      modal.addComponents(row);
-
-      return interaction.showModal(modal);
-    }
-
-    // BOTÃO: REGISTRAR VENDA (Abre Modal)
-    if (customId === 'painel_venda') {
-      const modal = new ModalBuilder()
-        .setCustomId('modal_vender')
-        .setTitle('💰 REGISTRAR VENDA');
-
-      const inputVendedor = new TextInputBuilder()
-        .setCustomId('vendedor_id')
-        .setLabel('Vendedor (Mencione ou insira o ID)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: @Membro ou 123456789012345')
-        .setRequired(true);
-
-      const inputArma = new TextInputBuilder()
-        .setCustomId('arma_chave')
-        .setLabel('Arma (ak47, awp, m16, sawedoff, glock17)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: ak47')
-        .setRequired(true);
-
-      const inputQtd = new TextInputBuilder()
-        .setCustomId('quantidade')
-        .setLabel('Quantidade')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 1')
-        .setRequired(true);
-
-      const inputDesc = new TextInputBuilder()
-        .setCustomId('desconto')
-        .setLabel('Desconto % (Ex: 0 para nenhum ou 30 para clã)')
-        .setStyle(TextInputStyle.Short)
-        .setValue('0')
-        .setRequired(false);
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(inputVendedor),
-        new ActionRowBuilder().addComponents(inputArma),
-        new ActionRowBuilder().addComponents(inputQtd),
-        new ActionRowBuilder().addComponents(inputDesc)
-      );
-
-      return interaction.showModal(modal);
-    }
+    } catch(e) {}
   }
 
-  // RECEBIMENTO DE SUBMISSÃO DOS MODAIS DO DISCORD
-  if (interaction.isModalSubmit()) {
-    const customId = interaction.customId;
+  // MODAL: RETIRAR AÇO
+  if (interaction.customId === 'modal_subaco') {
+    const qtdStr = interaction.fields.getTextInputValue('subaco_quantidade');
+    const quant = parseInt(qtdStr);
 
-    // MODAL: ADICIONAR AÇO
-    if (customId === 'modal_addaco') {
-      const quantidade = parseInt(interaction.fields.getTextInputValue('aco_quantidade'));
-
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!** Digite apenas números inteiros maiores que zero.', ephemeral: true });
-      }
-
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const addKits = Math.floor(quantidade * (pctKits / 100));
-      const addSales = quantidade - addKits;
-
-      db.estoqueKits = (db.estoqueKits || 0) + addKits;
-      db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-      db.estoque += quantidade;
-      salvarBanco();
-
-      await interaction.reply({ content: `⛓️ **Sucesso!** Adicionado **+${formatarNumero(quantidade)} kg** ao baú.`, ephemeral: true });
-      
-      const embedPublico = new EmbedBuilder()
-        .setTitle('⛓️ ENTRADA DE MATERIAL NO ESTOQUE')
-        .setColor('#248046')
-        .addFields(
-          { name: '👤 Responsável', value: `${interaction.user}`, inline: true },
-          { name: '📦 Quantidade Adicionada', value: `**+${formatarNumero(quantidade)} kg**`, inline: true },
-          { name: '📊 Divisão do Baú', value: `Vendas: **+${formatarNumero(addSales)} kg** | Kits: **+${formatarNumero(addKits)} kg**`, inline: false },
-          { name: '📊 Estoque Geral Atual', value: `**${formatarNumero(db.estoque)} kg**`, inline: true }
-        )
-        .setTimestamp();
-
-      return interaction.channel.send({ embeds: [embedPublico] });
+    if (isNaN(quant) || quant <= 0) {
+      return interaction.reply({ content: '❌ Erro: Por favor insira um número válido maior que zero.', ephemeral: true });
     }
 
-    // MODAL: REGISTRAR FARME DIÁRIO (REGISTRAR META)
-    if (customId === 'modal_registrar_meta') {
-      const quantidade = parseInt(interaction.fields.getTextInputValue('farme_quantidade'));
+    if (db.estoque < quant) {
+      return interaction.reply({ content: `❌ Erro: Estoque insuficiente! Baú atual tem apenas **${formatarNumero(db.estoque)} kg**.`, ephemeral: true });
+    }
 
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!** Digite apenas números inteiros maiores que zero.', ephemeral: true });
-      }
+    db.estoque -= quant;
+    const subKits = Math.floor(quant * (db.config.percentSteelForKits / 100));
+    const subVendas = quant - subKits;
 
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const addKits = Math.floor(quantidade * (pctKits / 100));
-      const addSales = quantidade - addKits;
+    db.estoqueKits = Math.max(0, db.estoqueKits - subKits);
+    db.estoqueVendas = Math.max(0, db.estoqueVendas - subVendas);
 
-      db.estoqueKits = (db.estoqueKits || 0) + addKits;
-      db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-      db.estoque += quantidade;
+    salvarBanco();
 
-      if (!db.farmes) db.farmes = [];
-      const novoFarme = {
-        id: `F-${Date.now().toString().slice(-6)}`,
-        timestamp: new Date().toISOString(),
-        userId: interaction.user.id,
-        userName: interaction.user.username,
-        quantidade
-      };
-      db.farmes.push(novoFarme);
-      salvarBanco();
+    await interaction.reply({ content: `✅ Sucesso! **${formatarNumero(quant)} kg** retirados do baú.`, ephemeral: true });
 
-      // Confirmar com resposta efêmera para o usuário
-      await interaction.reply({ content: `🚜 **Farme registrado com sucesso!** Adicionados **+${formatarNumero(quantidade)} kg** ao baú.`, ephemeral: true });
-
-      // Enviar log para o canal do Discord ID 1525698045537161226
-      const canalLogId = '1525698045537161226';
-      let canalLog = client.channels.cache.get(canalLogId);
-      if (!canalLog) {
-        try {
-          canalLog = await client.channels.fetch(canalLogId);
-        } catch (e) {
-          console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
+    // Atualiza o painel operacional no canal atual
+    try {
+      interaction.channel.messages.fetch({ limit: 10 }).then(messages => {
+        const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].description.includes('HUNTERS'));
+        if (botMsg) {
+          botMsg.delete();
+          enviarPainelCentral(interaction.channel);
         }
-      }
+      });
+    } catch(e) {}
+  }
 
-      const embedLog = new EmbedBuilder()
-        .setTitle('🚜 REGISTRO DE FARME DIÁRIO')
-        .setColor('#10b981')
-        .setDescription(`👤 **Membro:** ${interaction.user} (${interaction.user.username})\n📦 **Quantidade:** **${formatarNumero(quantidade)} kg** de aço\n📅 **Data:** <t:${Math.floor(Date.now() / 1000)}:f>`)
-        .setTimestamp();
+  // MODAL: REGISTRAR VENDA
+  if (interaction.customId === 'modal_venda') {
+    const armaKey = interaction.fields.getTextInputValue('venda_arma').toLowerCase().trim();
+    const qtdStr = interaction.fields.getTextInputValue('venda_quantidade');
+    const membroStr = interaction.fields.getTextInputValue('venda_membro') || interaction.user.username;
 
-      if (canalLog) {
-        await canalLog.send({ embeds: [embedLog] }).catch(err => {
-          console.error('Erro ao enviar mensagem para o canal de log:', err);
-        });
-      }
+    const quant = parseInt(qtdStr);
 
-      // Enviar anúncio público no canal atual
-      const embedPublico = new EmbedBuilder()
-        .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
-        .setColor('#a855f7')
-        .setDescription(`👤 O membro ${interaction.user} registrou **${formatarNumero(quantidade)} kg** de aço no baú!`)
-        .setTimestamp();
-
-      return interaction.channel.send({ embeds: [embedPublico] });
+    if (!ARMAS[armaKey]) {
+      return interaction.reply({ content: `❌ Código de arma inválido! Use um destes: \`${Object.keys(ARMAS).join(', ')}\``, ephemeral: true });
     }
 
-    // MODAL: RETIRAR AÇO
-    if (customId === 'modal_subaco') {
-      const quantidade = parseInt(interaction.fields.getTextInputValue('aco_quantidade'));
-
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!** Digite apenas números inteiros maiores que zero.', ephemeral: true });
-      }
-
-      if (db.estoque < quantidade) {
-        return interaction.reply({ content: `❌ **Estoque insuficiente!** O cofre de aço possui apenas **${formatarNumero(db.estoque)} kg**.`, ephemeral: true });
-      }
-
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const subKits = Math.floor(quantidade * (pctKits / 100));
-      const subSales = quantidade - subKits;
-
-      db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
-      db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSales);
-      db.estoque = db.estoqueKits + db.estoqueVendas;
-      salvarBanco();
-
-      await interaction.reply({ content: `⛓️ **Sucesso!** Retirado **-${formatarNumero(quantidade)} kg** proporcionalmente.`, ephemeral: true });
-      
-      const embedPublico = new EmbedBuilder()
-        .setTitle('⛓️ RETIRADA DE MATERIAL NO ESTOQUE')
-        .setColor('#da373c')
-        .addFields(
-          { name: '👤 Responsável', value: `${interaction.user}`, inline: true },
-          { name: '📦 Quantidade Retirada', value: `**-${formatarNumero(quantidade)} kg**`, inline: true },
-          { name: '📊 Divisão do Baú', value: `Vendas: **-${formatarNumero(subSales)} kg** | Kits: **-${formatarNumero(subKits)} kg**`, inline: false },
-          { name: '📊 Estoque Geral Atual', value: `**${formatarNumero(db.estoque)} kg**`, inline: true }
-        )
-        .setTimestamp();
-
-      return interaction.channel.send({ embeds: [embedPublico] });
+    if (isNaN(quant) || quant <= 0) {
+      return interaction.reply({ content: '❌ Por favor, digite uma quantidade válida.', ephemeral: true });
     }
 
-    // MODAL: REGISTRAR VENDA
-    if (customId === 'modal_vender') {
-      const vendedorInput = interaction.fields.getTextInputValue('vendedor_id');
-      const armaChave = interaction.fields.getTextInputValue('arma_chave').toLowerCase().trim();
-      const quantidade = parseInt(interaction.fields.getTextInputValue('quantidade'));
-      const desconto = parseInt(interaction.fields.getTextInputValue('desconto')) || 0;
+    const arma = ARMAS[armaKey];
+    const valorVenda = arma.preco * quant;
+    const acoConsumido = arma.aco * quant;
 
-      // Resolver Vendedor pelo ID ou Menção
-      let vendedorMembro = null;
-      const cleanId = vendedorInput.replace(/[<@!>]/g, '');
-      try {
-        vendedorMembro = await interaction.guild.members.fetch(cleanId);
-      } catch (e) {
-        return interaction.reply({ content: '❌ **Vendedor não encontrado!** Verifique se o ID ou menção estão corretos.', ephemeral: true });
-      }
-
-      if (!vendedorMembro) {
-        return interaction.reply({ content: '❌ **Vendedor inválido!**', ephemeral: true });
-      }
-
-      const arma = ARMAS[armaChave];
-      if (!arma) {
-        return interaction.reply({ content: '❌ **Arma inválida!** Opções disponíveis: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\`.', ephemeral: true });
-      }
-
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!**', ephemeral: true });
-      }
-
-      const acoNecessario = arma.aco * quantidade;
-      const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * ((db.config.percentSteelForSales || 70) / 100));
-
-      if (acoVendas < acoNecessario) {
-        return interaction.reply({ content: `❌ **Aço para Vendas Insuficiente!** Necessário **${formatarNumero(acoNecessario)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`, ephemeral: true });
-      }
-
-      const precoBase = arma.preco * quantidade;
-      const valorDesconto = precoBase * (desconto / 100);
-      const totalVenda = precoBase - valorDesconto;
-      const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
-      const lucroClas = totalVenda - comissaoVendedor;
-
-      // Atualizar estoques no Baú (Deduzir apenas do estoque de vendas)
-      db.estoqueVendas = acoVendas - acoNecessario;
-      db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
-      db.estoque = db.estoqueKits + db.estoqueVendas;
-      db.caixa += lucroClas;
-
-      const novaVenda = {
-        id: `V-${Date.now().toString().slice(-6)}`,
-        timestamp: new Date().toISOString(),
-        userId: vendedorMembro.id,
-        userName: vendedorMembro.user.username,
-        arma: arma.nome,
-        quantidade,
-        total: totalVenda,
-        desconto,
-        comissao: comissaoVendedor,
-        acoConsumido: acoNecessario
-      };
-
-      db.vendas.push(novaVenda);
-      salvarBanco();
-
-      await interaction.reply({ content: `🎯 Venda **${novaVenda.id}** lançada com sucesso no ERP!`, ephemeral: true });
-
-      const embedSucesso = new EmbedBuilder()
-        .setTitle('🎯 VENDA REGISTRADA COM SUCESSO')
-        .setColor('#10b981')
-        .addFields(
-          { name: '👤 Vendedor', value: `${vendedorMembro}`, inline: true },
-          { name: '🔫 Armamento', value: `**${quantidade}x ${arma.nome}**`, inline: true },
-          { name: '📉 Desconto', value: `**${desconto}%**`, inline: true },
-          { name: '💰 Total Pago', value: `**${formatarMoeda(totalVenda)}**` },
-          { name: '💸 Split Vendedor', value: `**${formatarMoeda(comissaoVendedor)}** (Comissão de ${db.config.splitPercent}%)`, inline: true },
-          { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}** (Fundo de ${100 - db.config.splitPercent}%)`, inline: true },
-          { name: '⛓️ Aço de Vendas Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
-        )
-        .setFooter({ text: `ID: ${novaVenda.id} • Lançado via Painel Interativo` })
-        .setTimestamp();
-
-      return interaction.channel.send({ embeds: [embedSucesso] });
+    if (db.estoqueVendas < acoConsumido) {
+      return interaction.reply({ content: `❌ Estoque reservado para vendas insuficiente! Necessita de **${formatarNumero(acoConsumido)} kg** de aço (Atual: ${formatarNumero(db.estoqueVendas)} kg).`, ephemeral: true });
     }
+
+    const split = db.config.splitPercent;
+    const comissaoMembro = valorVenda * (split / 100);
+    const lucroClan = valorVenda - comissaoMembro;
+
+    db.estoqueVendas -= acoConsumido;
+    db.estoque -= acoConsumido;
+    db.caixa += lucroClan;
+
+    db.vendas.push({
+      userId: interaction.user.id,
+      userName: membroStr.replace(/[<@!>]/g, ''),
+      arma: arma.nome,
+      quantidade: quant,
+      total: valorVenda,
+      comissao: comissaoMembro,
+      aco: acoConsumido,
+      data: new Date().toLocaleDateString('pt-BR')
+    });
+
+    salvarBanco();
+
+    await interaction.reply({ content: `✅ Venda de **${quant}x ${arma.nome}** registrada com sucesso para **${membroStr}**!`, ephemeral: true });
+
+    // Notificar no chat público da guilda
+    const embedVenda = new EmbedBuilder()
+      .setTitle('🛒 VENDA REGISTRADA — ERP HUNTERS')
+      .setDescription(`Armas fabricadas e vendidas com sucesso para a facção!`)
+      .addFields(
+        { name: '👤 Vendedor', value: `${membroStr}`, inline: true },
+        { name: '🔫 Armas Vendidas', value: `${arma.icon} ${quant}x ${arma.nome}`, inline: true },
+        { name: '💰 Total Venda', value: `**${formatarMoeda(valorVenda)}**`, inline: true },
+        { name: '🏦 Lucro Clã', value: `\`${formatarMoeda(lucroClan)}\` (${100 - split}%)`, inline: true },
+        { name: '💸 Comissão', value: `\`${formatarMoeda(comissaoMembro)}\` (${split}%)`, inline: true },
+        { name: '⛓️ Aço Consumido', value: `\`${formatarNumero(acoConsumido)} kg\` do estoque de Vendas`, inline: true }
+      )
+      .setColor('#10b981')
+      .setTimestamp();
+
+    interaction.channel.send({ embeds: [embedVenda] });
+
+    // Atualiza o painel operacional no canal atual
+    try {
+      interaction.channel.messages.fetch({ limit: 10 }).then(messages => {
+        const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].description.includes('HUNTERS'));
+        if (botMsg) {
+          botMsg.delete();
+          enviarPainelCentral(interaction.channel);
+        }
+      });
+    } catch(e) {}
+  }
+
+  // MODAL: REGISTRAR META
+  if (interaction.customId === 'modal_registrar_meta') {
+    const membroInput = interaction.fields.getTextInputValue('meta_user').trim();
+    const custo = db.config.kitMeta.custo; // 3260
+
+    if (db.estoqueKits < custo) {
+      return interaction.reply({ content: `❌ Erro: Estoque de kits insuficiente! Necessário **${formatarNumero(custo)} kg** de aço (Atual: ${formatarNumero(db.estoqueKits)} kg).`, ephemeral: true });
+    }
+
+    db.estoqueKits -= custo;
+    db.estoque -= custo;
+    db.kitsEntregues.push({
+      userId: Date.now().toString(), // simulação de ID único
+      userName: membroInput.replace(/[<@!>]/g, ''),
+      data: new Date().toLocaleDateString('pt-BR')
+    });
+
+    salvarBanco();
+
+    await interaction.reply({ content: `✅ Kit da Meta semanal enviado com sucesso para **${membroInput}**!`, ephemeral: true });
+
+    const embedKit = new EmbedBuilder()
+      .setTitle('🎁 KIT META SEMANAL ENTREGUE!')
+      .setDescription(`O administrador autorizou o envio do Kit semanal para **${membroInput}**!`)
+      .addFields(
+        { name: '🎁 Itens Inclusos', value: '🔫 AK-47 x1\n🔫 Glock 17 x1\n📦 Box 5.56 x3\n📦 Box Pistola x2' },
+        { name: '📉 Custo do Kit', value: `\`${formatarNumero(custo)} kg\` consumidos do Estoque de Kits.` }
+      )
+      .setColor('#10b981')
+      .setTimestamp();
+
+    interaction.channel.send({ embeds: [embedKit] });
+
+    // Atualiza o painel operacional no canal atual
+    try {
+      interaction.channel.messages.fetch({ limit: 10 }).then(messages => {
+        const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].description.includes('HUNTERS'));
+        if (botMsg) {
+          botMsg.delete();
+          enviarPainelCentral(interaction.channel);
+        }
+      });
+    } catch(e) {}
   }
 });
 
+// Login do Bot com Tratamento de Erros
 if (TOKEN) {
   client.login(TOKEN).catch(err => {
-    console.error('❌ Erro de login no Discord. Verifique o TOKEN:', err.message);
+    console.error('❌ Falha ao logar o Bot do Discord. Verifique o TOKEN em seu .env:', err.message);
   });
 } else {
-  console.error('❌ ERRO CRÍTICO: Variável DISCORD_TOKEN ou TOKEN não encontrada no seu ambiente!');
+  console.log('⚠️ [HUNTERS] Token do Discord ausente. Configure a variável DISCORD_TOKEN para iniciar o bot real.');
 }
