@@ -211,14 +211,37 @@ client.once('ready', () => {
   console.log(`🤖 [HUNTERS] Bot online como ${client.user.tag}!`);
   carregarBanco();
   
-  // Status personalizado e elegante
-  client.user.setPresence({
-    activities: [{ 
-      name: '💀 Operações HUNTERS | !ajuda', 
-      type: ActivityType.Competing 
-    }],
-    status: 'dnd'
-  });
+  // Status personalizado e elegante que rotaciona a cada 10 segundos para manter sempre ativo e dinâmico
+  const statusList = [
+    { name: () => '💀 Operações HUNTERS | !ajuda', type: ActivityType.Competing },
+    { name: () => `⛓️ Aço: ${formatarNumero(db.estoque)} kg`, type: ActivityType.Watching },
+    { name: () => `🏦 Caixa: R$ ${formatarNumero(Math.floor(db.caixa))}`, type: ActivityType.Listening },
+    { name: () => `🎁 Kits: ${calcularKitsDisponiveis()} Prontos`, type: ActivityType.Watching }
+  ];
+
+  let index = 0;
+  const updatePresence = () => {
+    try {
+      const currentStatus = statusList[index];
+      const statusName = currentStatus.name();
+      
+      client.user.setPresence({
+        activities: [{ 
+          name: statusName, 
+          type: currentStatus.type 
+        }],
+        status: 'dnd'
+      });
+      
+      index = (index + 1) % statusList.length;
+    } catch (e) {
+      console.error('Erro ao atualizar presença do bot:', e.message);
+    }
+  };
+
+  // Executar imediatamente e repetir a cada 10 segundos
+  updatePresence();
+  setInterval(updatePresence, 10000);
 });
 
 // Enviar o Painel Operacional Central
@@ -229,7 +252,6 @@ const enviarPainelCentral = (channel, targetUser = null) => {
   const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
   const split = db.config.splitPercent;
   const metaIndividual = db.config.kitMeta?.meta ?? 8000;
-  const custoKit = db.config.kitCost ?? 3260;
 
   // Calcular estatísticas dinâmicas para o painel
   const statsMap = {};
@@ -703,7 +725,7 @@ client.on('messageCreate', async (message) => {
 
     db.estoqueKits = (db.estoqueKits || 0) + addKits;
     db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-    db.estoque += quantity;
+    db.estoque += quantidade;
 
     if (!db.farmes) db.farmes = [];
     const novoFarme = {
@@ -794,7 +816,7 @@ client.on('messageCreate', async (message) => {
     const pctKits = db.config.percentSteelForKits || 30;
     const pctSales = db.config.percentSteelForSales || 70;
     const subKits = Math.floor(quantidade * (pctKits / 100));
-    const subSales = quantity - subKits;
+    const subSales = quantidade - subKits;
 
     db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
     db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSales);
@@ -978,25 +1000,6 @@ client.on('interactionCreate', async (interaction) => {
         .setCustomId('aco_quantidade')
         .setLabel('Quantidade de Aço (em kg)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 5000')
-        .setRequired(true);
-
-      const row = new ActionRowBuilder().addComponents(inputAco);
-      modal.addComponents(row);
-
-      return interaction.showModal(modal);
-    }
-
-    // BOTÃO: REGISTRAR META / FARME (Abre Modal)
-    if (customId === 'painel_registrar_meta') {
-      const modal = new ModalBuilder()
-        .setCustomId('modal_registrar_meta')
-        .setTitle('🎯 REGISTRAR FARME DIÁRIO');
-
-      const inputAco = new TextInputBuilder()
-        .setCustomId('farme_quantidade')
-        .setLabel('Quantidade de Aço Farmado (em kg)')
-        .setStyle(TextInputStyle.Short)
         .setPlaceholder('Ex: 2500')
         .setRequired(true);
 
@@ -1100,10 +1103,10 @@ client.on('interactionCreate', async (interaction) => {
       const pctKits = db.config.percentSteelForKits || 30;
       const pctSales = db.config.percentSteelForSales || 70;
       const addKits = Math.floor(quantidade * (pctKits / 100));
-      const addSales = quantidade - addKits;
+      const addSales = quantity => quantidade - addKits; // safe backup
 
       db.estoqueKits = (db.estoqueKits || 0) + addKits;
-      db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
+      db.estoqueVendas = (db.estoqueVendas || 0) + (quantidade - addKits);
       db.estoque += quantidade;
 
       if (!db.farmes) db.farmes = [];
