@@ -15,8 +15,8 @@ import axios from 'axios';
 // ==========================================
 // CONFIGURAÇÕES INICIAIS
 // ==========================================
-const TOKEN = process.env.DISCORD_TOKEN || "SEU_TOKEN_AQUI";
-const API_URL = process.env.API_URL || "SUA_URL_DA_API_AQUI"; // URL do seu ERP para sincronização
+const TOKEN = process.env.DISCORD_TOKEN;
+const API_URL = process.env.API_URL;
 
 const client = new Client({
   intents: [
@@ -498,4 +498,4 @@ client.on('interactionCreate', async (interaction) => {
 // ==========================================
 // LOGIN DO BOT
 // ==========================================
-client.login(TOKEN);
+client.login(process.env.DISCORD_TOKEN);
