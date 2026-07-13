@@ -44,7 +44,7 @@ const client = new Client({
 });
 
 const PREFIX = process.env.PREFIX || '!';
-const TOKEN = process.env.TOKEN;
+const TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
 const DB_FILE = path.join(__dirname, 'hunters_database.json');
 
 // ID do Cargo autorizado a colocar e retirar estoque
