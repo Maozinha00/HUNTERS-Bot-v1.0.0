@@ -10,7 +10,7 @@
  * 1. Requer Node.js v16.9.0 ou superior.
  * 2. Instalação: npm install discord.js dotenv
  * 3. Configure o arquivo .env:
- *    - DISCORD_TOKEN=Seu_Token_Do_Bot (ou use a variável TOKEN no seu painel)
+ *    - DISCORD_TOKEN=Seu_Token_Do_Bot
  *    - PREFIX=!
  *
  * 🔒 CONTROLE DE ACESSO:
@@ -662,7 +662,7 @@ client.on('messageCreate', async (message) => {
     return enviarPainelCentral(message.channel, message.author);
   }
 
-  // COMANDO: AVISO META (CRÍTICO - NOVO)
+  // COMANDO: AVISO META
   if (command === 'avisometa' || command === 'geraraviso' || command === 'aviso') {
     if (!message.member.permissions.has('Administrator') && !temPermissaoEstoque(message.member)) {
       return message.reply('❌ **Acesso Negado!** Apenas administradores do clã ou membros autorizados com acesso ao estoque podem disparar este aviso.');
@@ -824,7 +824,8 @@ client.on('messageCreate', async (message) => {
       return message.reply(`❌ **Aço para Vendas Insuficiente!** É necessário **${formatarNumero(acoNecessario)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`);
     }
 
-    const precoBase = arma.preco * quantity;
+    // CORREÇÃO CRÍTICA: "quantity" substituída pela variável correta "quantidade"
+    const precoBase = arma.preco * quantidade;
     const valorDesconto = precoBase * (desconto / 100);
     const totalVenda = precoBase - valorDesconto;
     const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
