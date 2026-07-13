@@ -116,7 +116,7 @@ const client = new Client({
 
 // FUNÇÃO PARA ATUALIZAR PARCELAS DE ESTOQUE
 function recalcularEstoqueDividido() {
-  const pctKits = db.config.PERCENT_STEEL_FOR_KITS || 30;
+  const pctKits = db.config.PERCENT_STEEL_FOR_KITS || 60;
   db.estoqueKits = Math.floor((db.estoque * pctKits) / 100);
   db.estoqueVendas = db.estoque - db.estoqueKits;
 }
@@ -233,19 +233,18 @@ function obterPainelPayload() {
   const lines = [];
 
   // ASCII Header
-  lines.push('╔══════════════════════════════════════════════════════════════════════╗');
-  lines.push('║                                                                      ║');
-  lines.push('║   ██╗  ██╗██╗   ██╗███╗   ██╗████████╗███████╗██████╗ ███████╗       ║');
-  lines.push('║   ██║  ██║██║   ██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗██╔════╝       ║');
-  lines.push('║   ███████║██║   ██║██╔██╗ ██║   ██║   █████╗  ██████╔╝███████╗       ║');
-  lines.push('║   ██╔══██║██║   ██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗╚════██║       ║');
-  lines.push('║   ██║  ██║╚██████╔╝██║ ╚████║   ██║   ███████╗██║  ██║███████║       ║');
-  lines.push('║   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚══════╝       ║');
-  lines.push('║                                                                      ║');
-  lines.push('║                    🐺 ERP PREMIUM • GERENCIAMENTO                    ║');
-  lines.push('║                     Sistema Inteligente do Clã v4.0                  ║');
-  lines.push('║                                                                      ║');
-  lines.push('╚══════════════════════════════════════════════════════════════════════╝');
+  lines.push('╔════════════════════════════════════════════╗');
+  lines.push('║                                            ║');
+  lines.push('║  ██╗  ██╗ ██╗   ██╗ ███╗   ██╗████████╗    ║');
+  lines.push('║  ██║  ██║ ██║   ██║ ████╗  ██║╚══██╔══╝    ║');
+  lines.push('║  ███████║ ██║   ██║ ██╔██╗ ██║   ██║       ║');
+  lines.push('║  ██╔══██║ ██║   ██║ ██║╚██╗██║   ██║       ║');
+  lines.push('║  ██║  ██║ ╚██████╔╝ ██║ ╚████║   ██║       ║');
+  lines.push('║  ╚═╝  ╚═╝  ╚═════╝  ╚═╝  ╚═══╝   ╚═╝       ║');
+  lines.push('║                                            ║');
+  lines.push('║          🐺 HUNTERS ERP • v4.0             ║');
+  lines.push('║                                            ║');
+  lines.push('╚════════════════════════════════════════════╝');
   lines.push('');
 
   // ESTOQUE BOX
@@ -337,7 +336,7 @@ function obterPainelPayload() {
       .setStyle(ButtonStyle.Danger)
   );
 
-  // Linha de Botões 3: Estatísticas Gerais
+  // Linha de Botões 3: Estatísticas Gerais e Ações Staff
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('btn_ver_ranking')
@@ -346,7 +345,11 @@ function obterPainelPayload() {
     new ButtonBuilder()
       .setCustomId('btn_ver_detalhes_kit')
       .setLabel('🎁 Detalhes do Kit')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('btn_staff_reset')
+      .setLabel('⚙️ Resetar Ciclo (Staff)')
+      .setStyle(ButtonStyle.Danger)
   );
 
   return { embeds: [embed], components: [row1, row2, row3] };
@@ -427,7 +430,7 @@ client.on('messageCreate', async (message) => {
         `👉 **Clique aqui para ir ao Canal do Painel:** <#${db.config.CANAL_PAINEL_ID || '1523844178151473193'}>\n` +
         `*(Membros que não preencherem estarão sujeitos à remoção das permissões de kits e gerenciamento)*\n\n` +
         `Não perca o prazo e garanta o seu kit semanal regulamentar de armamentos! Foco total na meta! ⚔️`)
-      .setFooter({ text: 'Hunters ERP • Administração Hunters' })
+      .setFooter({ text: 'Hunters ERP • Administration Hunters' })
       .setTimestamp();
 
     try {
@@ -487,8 +490,8 @@ client.on('messageCreate', async (message) => {
 
     db.farmes = [];
     db.vendas = [];
-    db.estoque = 69000;
-    db.caixa = 280000;
+    db.estoque = 150000;
+    db.caixa = 15000000;
     recalcularEstoqueDividido();
     salvarBanco();
 
@@ -557,7 +560,7 @@ client.on('interactionCreate', async (interaction) => {
         .setTitle('🎁 COMPOSIÇÃO DO KIT DE META SEMANAL')
         .setColor('#a855f7')
         .setDescription(
-          `Para receber este kit completo, o membro deve atingir o farme acumulado de **${formatarNumero(db.config.META_ACO_KG)} kg de aço** na semana.\n\n⚖️ **Custo Unitário de Aço:** \`${formatarNumero(db.config.CUSTO_KIT_KG)} kg\`\n\n📦 **Componentes inclusos no Kit:**\n• **1x Fuzil AK-47** *(Equivalente a ${formatarNumero(KIT_META_ITENS.ak47.aco)} kg)*\n• **5x Coletes Táticos** *(Equivalente a ${formatarNumero(KIT_META_ITENS.coletes.aco)} kg)*\n• **250x Munições de Fuzil** *(Equivalente a ${formatarNumero(KIT_META_ITENS.municao.aco)} kg)*\n\n*Registre seus farmes no painel! Foco na produção do arsenal.*`
+          `Para receber este kit completo, o membro deve atingir o farme acumulado de **${formatarNumero(db.config.META_ACO_KG)} kg de aço** na semana.\n\n📦 **Componentes inclusos no Kit:**\n• **1x Fuzil AK-47**\n• **5x Coletes Táticos**\n• **250x Munições de Fuzil**\n\n*Registre seus farmes no painel! Foco na produção do arsenal.*`
         )
         .setTimestamp();
       return interaction.reply({ embeds: [embedDetalhes], ephemeral: true });
@@ -592,6 +595,23 @@ client.on('interactionCreate', async (interaction) => {
         .setDescription(txt)
         .setTimestamp();
       return interaction.reply({ embeds: [embedRanking], ephemeral: true });
+    }
+
+    // BOTÃO: RESETAR CICLO (Staff only, check for administrator permission)
+    if (customId === 'btn_staff_reset') {
+      if (!interaction.member.permissions.has('Administrator')) {
+        return interaction.reply({ content: '❌ **Acesso Negado!** Apenas administradores/staff podem resetar o ciclo atual.', ephemeral: true });
+      }
+
+      db.farmes = [];
+      db.vendas = [];
+      db.estoque = 150000;
+      db.caixa = 15000000;
+      recalcularEstoqueDividido();
+      salvarBanco();
+
+      await atualizarPainel(guild);
+      return interaction.reply({ content: '✅ **Sucesso!** O ciclo semanal e histórico foram resetados com sucesso.', ephemeral: true });
     }
 
     // BOTÃO COM MODAL: REGISTRAR FARME
@@ -725,6 +745,24 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
 
+      // Enviar log para o canal de farme configurado (1525698045537161226)
+      const canalFarmeLogs = guild.channels.cache.get('1525698045537161226')
+        || await guild.channels.fetch('1525698045537161226').catch(() => null);
+      if (canalFarmeLogs) {
+        const embedFarmeLog = new EmbedBuilder()
+          .setTitle('⛓️ NOVO FARME REGISTRADO • LOGS')
+          .setColor('#3b82f6')
+          .setDescription(
+            `👤 **Membro:** <@${user.id}> (${member.displayName || user.username})\n` +
+            `📦 **Quantidade:** \`${formatarNumero(qty)} kg\` de aço depositados no baú\n` +
+            `📈 **Acumulado Semanal:** \`${formatarNumero(totalNovo)} kg\` / \`${formatarNumero(db.config.META_ACO_KG || 8000)} kg\``
+          )
+          .setFooter({ text: 'Hunters ERP • Logs de Produção' })
+          .setTimestamp();
+
+        await canalFarmeLogs.send({ embeds: [embedFarmeLog] }).catch(() => null);
+      }
+
       // Atualizar o Painel Central de Controle
       await atualizarPainel(guild);
       return;
@@ -771,7 +809,7 @@ client.on('interactionCreate', async (interaction) => {
       const precoLiquido = precoBruto - valorDesconto;
 
       // Divisão de lucros (split %)
-      const pctMembro = db.config.SPLIT_CLAN_PERCENT || 30;
+      const pctMembro = db.config.SPLIT_CLAN_PERCENT || 50;
       const comissaoMembro = (precoLiquido * pctMembro) / 100;
       const liquidoClan = precoLiquido - comissaoMembro;
 
