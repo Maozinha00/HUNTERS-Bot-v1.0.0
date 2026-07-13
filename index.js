@@ -59,6 +59,7 @@ let db = {
   caixa: 280000,          // R$ 280.000 padrão
   vendas: [],
   kitsEntregues: [],      // Histórico de Kits entregues aos membros
+  farmes: [],             // Registro de farmes diários para as metas
   config: {
     splitPercent: 30,           // % de comissão do vendedor (membro)
     steelClanPercent: 10,       // % de retenção de aço pro clã
@@ -101,6 +102,7 @@ function carregarBanco() {
       if (db.config.percentSteelForSales === undefined) db.config.percentSteelForSales = 70;
       if (db.config.splitPercent === undefined) db.config.splitPercent = 30;
       if (db.kitsEntregues === undefined) db.kitsEntregues = [];
+      if (db.farmes === undefined) db.farmes = [];
       
       if (db.config.kitMeta === undefined) {
         db.config.kitMeta = {
@@ -166,7 +168,7 @@ function calcularKitsDisponiveis() {
 const obterMetasEmbed = () => {
   const statsMap = {};
   
-  // Agrupar aço consumido por usuário
+  // Agrupar aço consumido por usuário em vendas
   db.vendas.forEach(v => {
     const key = v.userName || 'Membro Antigo';
     if (!statsMap[key]) {
@@ -175,6 +177,17 @@ const obterMetasEmbed = () => {
     statsMap[key].aco += (v.acoConsumido || 0);
     statsMap[key].count++;
   });
+
+  // Agrupar aço de farmes diários
+  if (db.farmes) {
+    db.farmes.forEach(f => {
+      const key = f.userName || 'Membro Antigo';
+      if (!statsMap[key]) {
+        statsMap[key] = { aco: 0, count: 0 };
+      }
+      statsMap[key].aco += (f.quantidade || 0);
+    });
+  }
 
   let list = "";
   Object.entries(statsMap).forEach(([userName, stats]) => {
@@ -243,6 +256,10 @@ const enviarPainelCentral = (channel, targetUser = null) => {
       .setCustomId('painel_caixa')
       .setLabel('🏦 Caixa')
       .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('painel_registrar_meta')
+      .setLabel('🎯 Registrar Meta')
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('painel_addaco')
       .setLabel('➕ Adicionar Aço')
@@ -587,6 +604,69 @@ client.on('messageCreate', async (message) => {
     return message.reply({ embeds: [embedLogs] });
   }
 
+  // COMANDO: FARME / REGISTRAR_META
+  if (command === 'farme' || command === 'farm' || command === 'registrar' || command === 'registrar_meta') {
+    const quantidade = parseInt(args[0]);
+    if (isNaN(quantidade) || quantidade <= 0) {
+      return message.reply(`❌ **Uso correto:** \`${PREFIX}farme <quantidade_em_kg>\`\nExemplo: \`${PREFIX}farme 2500\``);
+    }
+
+    const pctKits = db.config.percentSteelForKits || 30;
+    const pctSales = db.config.percentSteelForSales || 70;
+    const addKits = Math.floor(quantidade * (pctKits / 100));
+    const addSales = quantidade - addKits;
+
+    db.estoqueKits = (db.estoqueKits || 0) + addKits;
+    db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
+    db.estoque += quantidade;
+
+    if (!db.farmes) db.farmes = [];
+    const novoFarme = {
+      id: `F-${Date.now().toString().slice(-6)}`,
+      timestamp: new Date().toISOString(),
+      userId: message.author.id,
+      userName: message.author.username,
+      quantidade
+    };
+    db.farmes.push(novoFarme);
+    salvarBanco();
+
+    // Responder ao usuário com confirmação
+    await message.reply(`🚜 **Farme registrado com sucesso!** Foram adicionados **+${formatarNumero(quantidade)} kg** ao baú.`);
+
+    // Enviar registro para o canal de ID 1525698045537161226
+    const canalLogId = '1525698045537161226';
+    let canalLog = client.channels.cache.get(canalLogId);
+    if (!canalLog) {
+      try {
+        canalLog = await client.channels.fetch(canalLogId);
+      } catch (e) {
+        console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
+      }
+    }
+
+    const embedLog = new EmbedBuilder()
+      .setTitle('🚜 REGISTRO DE FARME DIÁRIO')
+      .setColor('#10b981')
+      .setDescription(`👤 **Membro:** ${message.author} (${message.author.username})\n📦 **Quantidade:** **${formatarNumero(quantidade)} kg** de aço\n📅 **Data:** <t:${Math.floor(Date.now() / 1000)}:f>`)
+      .setTimestamp();
+
+    if (canalLog) {
+      await canalLog.send({ embeds: [embedLog] }).catch(err => {
+        console.error('Erro ao enviar mensagem para o canal de log:', err);
+      });
+    }
+
+    // Publicar aviso público no canal da ação
+    const embedPublico = new EmbedBuilder()
+      .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
+      .setColor('#a855f7')
+      .setDescription(`👤 O membro ${message.author} registrou **${formatarNumero(quantidade)} kg** de aço no baú!`)
+      .setTimestamp();
+
+    return message.channel.send({ embeds: [embedPublico] });
+  }
+
   // COMANDO ADMIN: ADDACO
   if (command === 'addaco') {
     if (!temPermissaoEstoque(message.member)) {
@@ -647,6 +727,7 @@ client.on('messageCreate', async (message) => {
 
     db.vendas = [];
     db.kitsEntregues = [];
+    db.farmes = [];
     db.estoque = 69000;
     db.estoqueKits = 20700;
     db.estoqueVendas = 48300;
@@ -822,6 +903,25 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.showModal(modal);
     }
 
+    // BOTÃO: REGISTRAR META / FARME (Abre Modal)
+    if (customId === 'painel_registrar_meta') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_registrar_meta')
+        .setTitle('🎯 REGISTRAR FARME DIÁRIO');
+
+      const inputAco = new TextInputBuilder()
+        .setCustomId('farme_quantidade')
+        .setLabel('Quantidade de Aço Farmado (em kg)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Ex: 2500')
+        .setRequired(true);
+
+      const row = new ActionRowBuilder().addComponents(inputAco);
+      modal.addComponents(row);
+
+      return interaction.showModal(modal);
+    }
+
     // BOTÃO: REGISTRAR VENDA (Abre Modal)
     if (customId === 'painel_venda') {
       const modal = new ModalBuilder()
@@ -900,6 +1000,70 @@ client.on('interactionCreate', async (interaction) => {
           { name: '📊 Divisão do Baú', value: `Vendas: **+${formatarNumero(addSales)} kg** | Kits: **+${formatarNumero(addKits)} kg**`, inline: false },
           { name: '📊 Estoque Geral Atual', value: `**${formatarNumero(db.estoque)} kg**`, inline: true }
         )
+        .setTimestamp();
+
+      return interaction.channel.send({ embeds: [embedPublico] });
+    }
+
+    // MODAL: REGISTRAR FARME DIÁRIO (REGISTRAR META)
+    if (customId === 'modal_registrar_meta') {
+      const quantidade = parseInt(interaction.fields.getTextInputValue('farme_quantidade'));
+
+      if (isNaN(quantidade) || quantidade <= 0) {
+        return interaction.reply({ content: '❌ **Quantidade inválida!** Digite apenas números inteiros maiores que zero.', ephemeral: true });
+      }
+
+      const pctKits = db.config.percentSteelForKits || 30;
+      const pctSales = db.config.percentSteelForSales || 70;
+      const addKits = Math.floor(quantidade * (pctKits / 100));
+      const addSales = quantidade - addKits;
+
+      db.estoqueKits = (db.estoqueKits || 0) + addKits;
+      db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
+      db.estoque += quantidade;
+
+      if (!db.farmes) db.farmes = [];
+      const novoFarme = {
+        id: `F-${Date.now().toString().slice(-6)}`,
+        timestamp: new Date().toISOString(),
+        userId: interaction.user.id,
+        userName: interaction.user.username,
+        quantidade
+      };
+      db.farmes.push(novoFarme);
+      salvarBanco();
+
+      // Confirmar com resposta efêmera para o usuário
+      await interaction.reply({ content: `🚜 **Farme registrado com sucesso!** Adicionados **+${formatarNumero(quantidade)} kg** ao baú.`, ephemeral: true });
+
+      // Enviar log para o canal do Discord ID 1525698045537161226
+      const canalLogId = '1525698045537161226';
+      let canalLog = client.channels.cache.get(canalLogId);
+      if (!canalLog) {
+        try {
+          canalLog = await client.channels.fetch(canalLogId);
+        } catch (e) {
+          console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
+        }
+      }
+
+      const embedLog = new EmbedBuilder()
+        .setTitle('🚜 REGISTRO DE FARME DIÁRIO')
+        .setColor('#10b981')
+        .setDescription(`👤 **Membro:** ${interaction.user} (${interaction.user.username})\n📦 **Quantidade:** **${formatarNumero(quantidade)} kg** de aço\n📅 **Data:** <t:${Math.floor(Date.now() / 1000)}:f>`)
+        .setTimestamp();
+
+      if (canalLog) {
+        await canalLog.send({ embeds: [embedLog] }).catch(err => {
+          console.error('Erro ao enviar mensagem para o canal de log:', err);
+        });
+      }
+
+      // Enviar anúncio público no canal atual
+      const embedPublico = new EmbedBuilder()
+        .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
+        .setColor('#a855f7')
+        .setDescription(`👤 O membro ${interaction.user} registrou **${formatarNumero(quantidade)} kg** de aço no baú!`)
         .setTimestamp();
 
       return interaction.channel.send({ embeds: [embedPublico] });
@@ -985,7 +1149,6 @@ client.on('interactionCreate', async (interaction) => {
       const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
       const lucroClas = totalVenda - comissaoVendedor;
 
-      // ... (Código do bot continua acima)
       // Atualizar estoques no Baú (Deduzir apenas do estoque de vendas)
       db.estoqueVendas = acoVendas - acoNecessario;
       db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
