@@ -97,7 +97,6 @@ let ultimoPainelMensagem = null;
 // 📦 FUNÇÕES DE BANCO DE DADOS
 // =========================================================================
 
-// Carregar banco de dados ou criar novo
 function carregarBanco() {
   try {
     if (fs.existsSync(DB_FILE)) {
@@ -105,7 +104,6 @@ function carregarBanco() {
       db = JSON.parse(dados);
       console.log('📦 [HUNTERS] Banco de dados carregado com sucesso!');
       
-      // Sincronizar e injetar configurações e novas chaves caso ausentes
       if (!db.config) db.config = {};
       if (db.config.percentSteelForKits === undefined) db.config.percentSteelForKits = 30;
       if (db.config.percentSteelForSales === undefined) db.config.percentSteelForSales = 70;
@@ -128,7 +126,6 @@ function carregarBanco() {
         };
       }
       
-      // Manter custo do kit sincronizado
       db.config.kitCost = db.config.kitMeta.custo;
 
       if (db.estoqueKits === undefined || db.estoqueVendas === undefined) {
@@ -145,12 +142,9 @@ function carregarBanco() {
   }
 }
 
-// Salvar banco de dados e atualizar tudo em tempo real
 function salvarBanco(skipPanelUpdate = false) {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
-    
-    // Dispara a sincronização em tempo real caso não esteja ignorando
     if (!skipPanelUpdate) {
       atualizarPainel();
     }
@@ -161,7 +155,7 @@ function salvarBanco(skipPanelUpdate = false) {
 }
 
 // =========================================================================
-// ⚙️ HELPERS REUTILIZÁVEIS DE LAYOUT E FORMATAÇÃO (Otimizados e Extraídos)
+// ⚙️ HELPERS REUTILIZÁVEIS DE LAYOUT E FORMATAÇÃO
 // =========================================================================
 
 const formatarMoeda = (valor) => {
@@ -184,7 +178,7 @@ const getVisualLength = (str) => {
       length += 2;
       i++;
     } else if (code === 0xFE0F) {
-      // variation selector, 0 width
+      // variation selector
     } else if (code === 0x26D3 || code === 0x23F1) {
       length += 2;
     } else {
@@ -220,24 +214,20 @@ const formatarLinhaTitulo = (titulo) => {
   return `║ ${titulo}${spaces} ║`;
 };
 
-// Helper para verificar autorização (Cargo específico ou Administrador)
 const temPermissaoEstoque = (member) => {
   if (!member) return false;
   return member.roles.cache.has(CARGO_ESTOQUE_ID) || member.permissions.has('Administrator');
 };
 
-// Obter quantidade de Kits da Meta disponíveis no estoque reservado
 function calcularKitsDisponiveis() {
   const custo = (db.config && db.config.kitMeta && db.config.kitMeta.custo) ? db.config.kitMeta.custo : 3260;
   const estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
   return Math.floor(estoqueKits / custo);
 }
 
-// Obter o Embed de Metas de Aço (8.000 kg semanal por pessoa)
 const obterMetasEmbed = () => {
   const statsMap = {};
   
-  // Agrupar aço consumido por usuário em vendas
   db.vendas.forEach(v => {
     const key = v.userName || 'Membro Antigo';
     if (!statsMap[key]) {
@@ -247,7 +237,6 @@ const obterMetasEmbed = () => {
     statsMap[key].count++;
   });
 
-  // Agrupar aço de farmes diários
   if (db.farmes) {
     db.farmes.forEach(f => {
       const key = f.userName || 'Membro Antigo';
@@ -288,7 +277,6 @@ const obterPainelPayload = () => {
   const split = db.config.splitPercent;
   const metaIndividual = db.config.kitMeta?.meta ?? 8000;
 
-  // Calcular estatísticas dinâmicas para o painel
   const statsMap = {};
   db.vendas.forEach(v => {
     const key = v.userId;
@@ -340,7 +328,6 @@ const obterPainelPayload = () => {
     .setColor('#a855f7')
     .setTimestamp();
 
-  // Botões de Interação de cor Roxa (ButtonStyle.Primary)
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('painel_estoque')
@@ -394,22 +381,17 @@ const obterPainelPayload = () => {
 // 🔄 FUNÇÕES DE SINCRONIZAÇÃO AUTOMÁTICA EM TEMPO REAL
 // =========================================================================
 
-// Função que edita o painel principal existente de forma inteligente
 async function atualizarPainel() {
   try {
     if (!db.painelCanalId || !db.painelMensagemId) return;
 
     const canal = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
-    if (!canal) {
-      console.log(`⚠️ [HUNTERS] Canal do painel não encontrado: ${db.painelCanalId}`);
-      return;
-    }
+    if (!canal) return;
 
     const mensagem = await canal.messages.fetch(db.painelMensagemId).catch(async (err) => {
-      if (err.code === 10008) { // Unknown Message (foi apagada)
-        console.log(`⚠️ [HUNTERS] Mensagem do painel foi apagada. Recriando automaticamente...`);
+      if (err.code === 10008) {
         db.painelMensagemId = null;
-        salvarBanco(true); // Evita loop de chamadas
+        salvarBanco(true);
         await criarPainel(canal);
       }
       return null;
@@ -422,61 +404,48 @@ async function atualizarPainel() {
       ultimoPainelMensagem = msg;
     }).catch(async (err) => {
       if (err.code === 10008) {
-        console.log(`⚠️ [HUNTERS] Mensagem do painel foi apagada ao editar. Recriando...`);
         db.painelMensagemId = null;
         salvarBanco(true);
         await criarPainel(canal);
-      } else {
-        console.error('❌ [HUNTERS] Erro ao editar painel central:', err.message);
       }
     });
 
-    // Sincroniza o status do bot na hora
     atualizarStatusPresenca();
   } catch (e) {
-    console.error('❌ [HUNTERS] Erro geral ao atualizar painel central:', e.message);
+    console.error('❌ Erro ao atualizar painel central:', e.message);
   }
 }
 
-// Cria o painel se ele não existir, ou atualiza se já existir
 async function criarPainel(canal) {
   if (!canal) return;
 
-  // Se já existir e estiver ativo, apenas atualizamos
   if (db.painelCanalId && db.painelMensagemId) {
     try {
       const canalSalvo = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
       if (canalSalvo) {
         const msg = await canalSalvo.messages.fetch(db.painelMensagemId).catch(() => null);
         if (msg) {
-          console.log(`📦 [HUNTERS] Painel operacional já existe. Apenas atualizando...`);
           ultimoPainelMensagem = msg;
           await atualizarPainel();
           return;
         }
       }
-    } catch (e) {
-      console.log(`[HUNTERS] Erro ao buscar mensagem em criarPainel:`, e.message);
-    }
+    } catch (e) {}
   }
 
-  // Se não existir, criamos um novo e salvamos os dados
-  console.log(`📦 [HUNTERS] Criando novo painel central no canal #${canal.name}...`);
   const payload = obterPainelPayload();
   try {
     const msg = await canal.send(payload);
     db.painelCanalId = canal.id;
     db.painelMensagemId = msg.id;
     ultimoPainelMensagem = msg;
-    salvarBanco(true); // Salva os novos IDs silenciosamente
-    console.log(`✅ [HUNTERS] Novo painel principal criado e IDs salvos com sucesso!`);
+    salvarBanco(true);
     atualizarStatusPresenca();
   } catch (err) {
-    console.error("❌ [HUNTERS] Erro ao enviar painel operacional:", err.message);
+    console.error("❌ Erro ao enviar painel operacional:", err.message);
   }
 }
 
-// Sincroniza o status/presença do bot em tempo real com todos os dados requisitados
 function atualizarStatusPresenca() {
   try {
     if (!client.user) return;
@@ -505,13 +474,11 @@ function atualizarStatusPresenca() {
       status: 'dnd'
     });
   } catch (e) {
-    console.error('❌ [HUNTERS] Erro ao atualizar status de presença:', e.message);
+    console.error('❌ Erro ao atualizar status de presença:', e.message);
   }
 }
 
-// Enviar o Painel Operacional Central (Comando !painel ou !ajuda)
 const enviarPainelCentral = async (channel, targetUser = null) => {
-  // Se o painel já existe e está no mesmo canal, apenas garante atualização
   if (db.painelCanalId === channel.id && db.painelMensagemId) {
     try {
       const msg = await channel.messages.fetch(db.painelMensagemId).catch(() => null);
@@ -526,7 +493,6 @@ const enviarPainelCentral = async (channel, targetUser = null) => {
     } catch (e) {}
   }
 
-  // Se o painel existia em outro canal, deleta o anterior para que exista APENAS UM painel principal ativo
   if (db.painelCanalId && db.painelMensagemId) {
     try {
       const canalAntigo = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
@@ -534,42 +500,31 @@ const enviarPainelCentral = async (channel, targetUser = null) => {
         const msgAntiga = await canalAntigo.messages.fetch(db.painelMensagemId).catch(() => null);
         if (msgAntiga) {
           await msgAntiga.delete().catch(() => null);
-          console.log(`[HUNTERS] Painel antigo no canal ${db.painelCanalId} foi apagado.`);
         }
       }
-    } catch (e) {
-      console.log(`[HUNTERS] Não foi possível deletar o painel antigo:`, e.message);
-    }
+    } catch (e) {}
     db.painelMensagemId = null;
     salvarBanco(true);
   }
 
-  // Enviar novo painel e registrar os novos IDs
   await criarPainel(channel);
   if (targetUser) {
     await channel.send({ content: `Olá ${targetUser}, aqui está o painel central:`, ephemeral: true }).catch(() => null);
   }
 };
 
-const atualizarPainelOrigem = async (interaction) => {
-  // Apenas delega ao fluxo global de tempo real para manter a perfeita consistência
-  await atualizarPainel();
-};
-
-// Auto-refresh inteligente do painel central a cada 10 segundos
 setInterval(async () => {
   await atualizarPainel();
 }, 10000);
 
 // =========================================================================
-// 🟢 EVENTO READY (INICIALIZAÇÃO E AUTO-LOCALIZAÇÃO)
+// 🟢 EVENTO READY
 // =========================================================================
 
 client.once('ready', async () => {
   console.log(`🤖 [HUNTERS] Bot online como ${client.user.tag}!`);
   carregarBanco();
   
-  // Tenta localizar o painel automaticamente na inicialização usando as credenciais salvas
   if (db.painelCanalId && db.painelMensagemId) {
     try {
       const canal = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
@@ -577,15 +532,13 @@ client.once('ready', async () => {
         const msg = await canal.messages.fetch(db.painelMensagemId).catch(() => null);
         if (msg) {
           ultimoPainelMensagem = msg;
-          console.log(`📦 [HUNTERS] Painel central localizado na inicialização com sucesso!`);
+          console.log(`📦 [HUNTERS] Painel central localizado com sucesso!`);
           await atualizarPainel();
         } else {
-          console.log(`⚠️ [HUNTERS] Mensagem do painel salva não pôde ser localizada no canal.`);
           db.painelMensagemId = null;
           salvarBanco(true);
         }
       } else {
-        console.log(`⚠️ [HUNTERS] Canal do painel salvo não pôde ser localizado.`);
         db.painelCanalId = null;
         db.painelMensagemId = null;
         salvarBanco(true);
@@ -595,9 +548,7 @@ client.once('ready', async () => {
     }
   }
 
-  // Se o painel não for localizado, varre os canais de texto por canais denominados "painel", "erp", etc. como fallback
   if (!ultimoPainelMensagem) {
-    console.log(`🔍 [HUNTERS] Buscando canais elegíveis para o painel de forma autônoma...`);
     let canalCandidato = null;
     for (const guild of client.guilds.cache.values()) {
       const channels = await guild.channels.fetch().catch(() => null);
@@ -614,14 +565,11 @@ client.once('ready', async () => {
     }
     
     if (canalCandidato) {
-      console.log(`🎯 [HUNTERS] Canal automático encontrado para painel: #${canalCandidato.name}`);
+      console.log(`🎯 Canal automático encontrado para painel: #${canalCandidato.name}`);
       await criarPainel(canalCandidato);
-    } else {
-      console.log(`⚠️ [HUNTERS] Nenhum canal de painel padrão encontrado. Use !painel para criá-lo.`);
     }
   }
 
-  // Inicializa a presença/status do bot e inicia o loop periódico
   atualizarStatusPresenca();
   setInterval(atualizarStatusPresenca, 10000);
 });
@@ -637,12 +585,10 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
-  // COMANDO: AJUDA / PAINEL
   if (command === 'ajuda' || command === 'help' || command === 'painel') {
     return enviarPainelCentral(message.channel, message.author);
   }
 
-  // COMANDO: KIT (NOVO SISTEMA)
   if (command === 'kit') {
     const acao = args[0]?.toLowerCase();
 
@@ -707,7 +653,6 @@ client.on('messageCreate', async (message) => {
         return message.reply(`❌ **Aço Insuficiente!** Não existe aço de kits suficiente no baú para montar este kit. Necessário: **${formatarNumero(custoReal)} kg**, disponível: **${formatarNumero(acoKits)} kg**.`);
       }
 
-      // Deduzir valores
       db.estoqueKits = acoKits - custoReal;
       db.estoqueVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * 0.7);
       db.estoque = db.estoqueKits + db.estoqueVendas;
@@ -721,7 +666,7 @@ client.on('messageCreate', async (message) => {
 
       if (!db.kitsEntregues) db.kitsEntregues = [];
       db.kitsEntregues.push(novoKit);
-      salvarBanco(); // Atualiza painel e presença de forma síncrona
+      salvarBanco();
 
       return message.reply({
         embeds: [
@@ -759,7 +704,6 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // COMANDO: ESTOQUE
   if (command === 'estoque') {
     const pctKits = db.config.percentSteelForKits || 30;
     const pctSales = db.config.percentSteelForSales || 70;
@@ -788,7 +732,6 @@ client.on('messageCreate', async (message) => {
     return message.reply({ embeds: [embedEstoque] });
   }
 
-  // COMANDO: CAIXA
   if (command === 'caixa' || command === 'cofre') {
     const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
     const embedCaixa = new EmbedBuilder()
@@ -803,7 +746,6 @@ client.on('messageCreate', async (message) => {
     return message.reply({ embeds: [embedCaixa] });
   }
 
-  // COMANDO: VENDER
   if (command === 'vender' || command === 'venda') {
     const membro = message.mentions.members.first() || (args[0] ? await message.guild.members.fetch(args[0]).catch(() => null) : null);
     const armaChave = args[1]?.toLowerCase();
@@ -819,12 +761,11 @@ client.on('messageCreate', async (message) => {
       return message.reply(`❌ **Arma inválida!** Opções: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\``);
     }
 
-    const acoNecessario = arma.aco * quantity => arma.aco * quantidade;
-    const acoNecessarioVal = arma.aco * quantidade;
+    const acoNecessario = arma.aco * quantidade;
     const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * ((db.config.percentSteelForSales || 70) / 100));
 
-    if (acoVendas < acoNecessarioVal) {
-      return message.reply(`❌ **Aço para Vendas Insuficiente!** É necessário **${formatarNumero(acoNecessarioVal)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`);
+    if (acoVendas < acoNecessario) {
+      return message.reply(`❌ **Aço para Vendas Insuficiente!** É necessário **${formatarNumero(acoNecessario)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`);
     }
 
     const precoBase = arma.preco * quantidade;
@@ -833,8 +774,7 @@ client.on('messageCreate', async (message) => {
     const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
     const lucroClas = totalVenda - comissaoVendedor;
 
-    // Atualizar Estoques Deduzindo do Aço de Vendas
-    db.estoqueVendas = acoVendas - acoNecessarioVal;
+    db.estoqueVendas = acoVendas - acoNecessario;
     db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
     db.estoque = db.estoqueKits + db.estoqueVendas;
     db.caixa += lucroClas;
@@ -849,11 +789,11 @@ client.on('messageCreate', async (message) => {
       total: totalVenda,
       desconto,
       comissao: comissaoVendedor,
-      acoConsumido: acoNecessarioVal
+      acoConsumido: acoNecessario
     };
 
     db.vendas.push(novaVenda);
-    salvarBanco(); // Atualiza tudo automaticamente
+    salvarBanco();
 
     const embedSucesso = new EmbedBuilder()
       .setTitle('🎯 VENDA REGISTRADA COM SUCESSO')
@@ -865,7 +805,7 @@ client.on('messageCreate', async (message) => {
         { name: '💰 Total Pago', value: `**${formatarMoeda(totalVenda)}**` },
         { name: '💸 Split Vendedor (Comissão)', value: `**${formatarMoeda(comissaoVendedor)}** (${db.config.splitPercent}%)`, inline: true },
         { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}** (${100 - db.config.splitPercent}%)`, inline: true },
-        { name: '⛓️ Aço de Vendas Consumido', value: `**-${formatarNumero(acoNecessarioVal)} kg**`, inline: true }
+        { name: '⛓️ Aço de Vendas Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
       )
       .setFooter({ text: `ID da Transação: ${novaVenda.id}` })
       .setTimestamp();
@@ -873,7 +813,6 @@ client.on('messageCreate', async (message) => {
     return message.reply({ embeds: [embedSucesso] });
   }
 
-  // COMANDO: RANKING
   if (command === 'ranking') {
     if (db.vendas.length === 0) {
       return message.reply('🏆 **Ranking Vazio!** Nenhuma venda foi registrada neste ciclo.');
@@ -907,13 +846,11 @@ client.on('messageCreate', async (message) => {
     return message.reply({ embeds: [embedRanking] });
   }
 
-  // COMANDO: METAS
   if (command === 'metas' || command === 'meta') {
     const embedMetas = obterMetasEmbed();
     return message.reply({ embeds: [embedMetas] });
   }
 
-  // COMANDO: HISTORICO / LOGS
   if (command === 'historico' || command === 'logs') {
     if (db.vendas.length === 0) {
       return message.reply('📑 Nenhuma transação registrada até o momento.');
@@ -921,11 +858,6 @@ client.on('messageCreate', async (message) => {
 
     const ultimasVendas = db.vendas.slice(-10).reverse();
     let listStr = '';
-    textVendas => {
-      ultimasVendas.forEach(v => {
-        listStr += `• **${v.id}** | **${v.userName}** vendeu **${v.quantidade}x ${v.arma}** por \`${formatarMoeda(v.total)}\` *(Desconto: ${v.desconto}% | Aço: -${formatarNumero(v.acoConsumido)}kg)*\n`;
-      });
-    };
     ultimasVendas.forEach(v => {
       listStr += `• **${v.id}** | **${v.userName}** vendeu **${v.quantidade}x ${v.arma}** por \`${formatarMoeda(v.total)}\` *(Desconto: ${v.desconto}% | Aço: -${formatarNumero(v.acoConsumido)}kg)*\n`;
     });
@@ -939,7 +871,6 @@ client.on('messageCreate', async (message) => {
     return message.reply({ embeds: [embedLogs] });
   }
 
-  // COMANDO: FARME / REGISTRAR_META
   if (command === 'farme' || command === 'farm' || command === 'registrar' || command === 'registrar_meta') {
     const quantidade = parseInt(args[0]);
     if (isNaN(quantidade) || quantidade <= 0) {
@@ -964,20 +895,16 @@ client.on('messageCreate', async (message) => {
       quantidade
     };
     db.farmes.push(novoFarme);
-    salvarBanco(); // Sincroniza em tempo real
+    salvarBanco();
 
-    // Responder ao usuário com confirmação
     await message.reply(`🚜 **Farme registrado com sucesso!** Foram adicionados **+${formatarNumero(quantidade)} kg** ao baú.`);
 
-    // Enviar registro para o canal de ID 1525698045537161226
     const canalLogId = '1525698045537161226';
     let canalLog = client.channels.cache.get(canalLogId);
     if (!canalLog) {
       try {
         canalLog = await client.channels.fetch(canalLogId);
-      } catch (e) {
-        console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
-      }
+      } catch (e) {}
     }
 
     const embedLog = new EmbedBuilder()
@@ -987,12 +914,9 @@ client.on('messageCreate', async (message) => {
       .setTimestamp();
 
     if (canalLog) {
-      await canalLog.send({ embeds: [embedLog] }).catch(err => {
-        console.error('Erro ao enviar mensagem para o canal de log:', err);
-      });
+      await canalLog.send({ embeds: [embedLog] }).catch(() => null);
     }
 
-    // Publicar aviso público no canal da ação
     const embedPublico = new EmbedBuilder()
       .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
       .setColor('#a855f7')
@@ -1002,7 +926,6 @@ client.on('messageCreate', async (message) => {
     return message.channel.send({ embeds: [embedPublico] });
   }
 
-  // COMANDO ADMIN: ADDACO
   if (command === 'addaco') {
     if (!temPermissaoEstoque(message.member)) {
       return message.reply(`❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem adicionar aço.`);
@@ -1021,12 +944,11 @@ client.on('messageCreate', async (message) => {
     db.estoqueKits = (db.estoqueKits || 0) + addKits;
     db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
     db.estoque += quantidade;
-    salvarBanco(); // Atualiza tudo automaticamente
+    salvarBanco();
 
     return message.reply(`⛓️ **Estoque Abastecido!** Foram adicionados **+${formatarNumero(quantidade)} kg** ao baú. Distribuído proporcionalmente:\n📥 **+${formatarNumero(addSales)} kg** para Vendas\n📥 **+${formatarNumero(addKits)} kg** para Kits.`);
   }
 
-  // COMANDO ADMIN: SUBACO
   if (command === 'subaco' || command === 'sub') {
     if (!temPermissaoEstoque(message.member)) {
       return message.reply(`❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem retirar aço.`);
@@ -1049,12 +971,11 @@ client.on('messageCreate', async (message) => {
     db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
     db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSales);
     db.estoque = db.estoqueKits + db.estoqueVendas;
-    salvarBanco(); // Sincronização em tempo real
+    salvarBanco();
 
     return message.reply(`⛓️ **Retirada Efetuada!** Removidos **-${formatarNumero(quantidade)} kg** proporcionalmente do baú (Vendas: -${formatarNumero(subSales)}kg, Kits: -${formatarNumero(subKits)}kg).`);
   }
 
-  // COMANDO ADMIN: LIMPAR / RESET
   if (command === 'limpar' || command === 'reset' || command === 'resetar') {
     if (!message.member.permissions.has('Administrator')) {
       return message.reply('❌ Apenas administradores do servidor podem resetar os logs de vendas.');
@@ -1067,7 +988,7 @@ client.on('messageCreate', async (message) => {
     db.estoqueKits = 20700;
     db.estoqueVendas = 48300;
     db.caixa = 280000;
-    salvarBanco(); // Atualiza painel e presença
+    salvarBanco();
 
     return message.reply('🧹 **Ciclo Resetado!** Todos os logs de vendas, farmes e kits entregues foram apagados e os valores retornaram ao padrão de fábrica (69.000 kg aço total com divisão 30/70, R$ 280.000 caixa).');
   }
@@ -1078,11 +999,9 @@ client.on('messageCreate', async (message) => {
 // =========================================================================
 
 client.on('interactionCreate', async (interaction) => {
-  // Tratar Cliques nos Botões do Painel
   if (interaction.isButton()) {
     const customId = interaction.customId;
 
-    // BOTÃO: CONSULTAR ESTOQUE
     if (customId === 'painel_estoque') {
       const pctKits = db.config.percentSteelForKits || 30;
       const pctSales = db.config.percentSteelForSales || 70;
@@ -1103,7 +1022,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embedEstoque], ephemeral: true });
     }
 
-    // BOTÃO: KITS META
     if (customId === 'painel_kits') {
       const kits = calcularKitsDisponiveis();
       const custoReal = db.config.kitMeta?.custo ?? 3260;
@@ -1119,7 +1037,6 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // BOTÃO: CAIXA
     if (customId === 'painel_caixa') {
       const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
       const embedCaixa = new EmbedBuilder()
@@ -1133,7 +1050,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embedCaixa], ephemeral: true });
     }
 
-    // BOTÃO: RANKING
     if (customId === 'painel_ranking') {
       if (db.vendas.length === 0) {
         return interaction.reply({ content: '🏆 Nenhum dado de vendas registrado para gerar o ranking ainda.', ephemeral: true });
@@ -1164,13 +1080,11 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embedRanking], ephemeral: true });
     }
 
-    // BOTÃO: METAS
     if (customId === 'painel_metas') {
       const embedMetas = obterMetasEmbed();
       return interaction.reply({ embeds: [embedMetas], ephemeral: true });
     }
 
-    // BOTÃO: HISTÓRICO
     if (customId === 'painel_historico') {
       if (db.vendas.length === 0) {
         return interaction.reply({ content: '📑 Nenhuma transação recente encontrada.', ephemeral: true });
@@ -1190,18 +1104,17 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embedLogs], ephemeral: true });
     }
 
-    // BOTÃO: ADICIONAR AÇO (Abre Modal)
     if (customId === 'painel_addaco') {
       if (!temPermissaoEstoque(interaction.member)) {
         return interaction.reply({ 
-          content: `❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem adicionar aço no baú.`, 
+          content: `❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem adicionar aço ao baú.`, 
           ephemeral: true 
         });
       }
 
       const modal = new ModalBuilder()
         .setCustomId('modal_addaco')
-        .setTitle('➕ ADICIONAR AÇO AO ESTOQUE');
+        .setTitle('➕ ADICIONAR AÇO');
 
       const inputAco = new TextInputBuilder()
         .setCustomId('aco_quantidade')
@@ -1216,7 +1129,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.showModal(modal);
     }
 
-    // BOTÃO: RETIRAR AÇO (Abre Modal)
     if (customId === 'painel_subaco') {
       if (!temPermissaoEstoque(interaction.member)) {
         return interaction.reply({ 
@@ -1242,7 +1154,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.showModal(modal);
     }
 
-    // BOTÃO: REGISTRAR META / FARME (Abre Modal)
     if (customId === 'painel_registrar_meta') {
       const modal = new ModalBuilder()
         .setCustomId('modal_registrar_meta')
@@ -1261,7 +1172,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.showModal(modal);
     }
 
-    // BOTÃO: REGISTRAR VENDA (Abre Modal)
     if (customId === 'painel_venda') {
       const modal = new ModalBuilder()
         .setCustomId('modal_vender')
@@ -1310,7 +1220,6 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.isModalSubmit()) {
     const customId = interaction.customId;
 
-    // MODAL: ADICIONAR AÇO
     if (customId === 'modal_addaco') {
       const quantidade = parseInt(interaction.fields.getTextInputValue('aco_quantidade'));
 
@@ -1326,7 +1235,7 @@ client.on('interactionCreate', async (interaction) => {
       db.estoqueKits = (db.estoqueKits || 0) + addKits;
       db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
       db.estoque += quantidade;
-      salvarBanco(); // Sincroniza em tempo real automaticamente
+      salvarBanco();
 
       await interaction.reply({ content: `⛓️ **Sucesso!** Adicionado **+${formatarNumero(quantidade)} kg** ao baú.`, ephemeral: true });
       
@@ -1344,7 +1253,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.channel.send({ embeds: [embedPublico] });
     }
 
-    // MODAL: REGISTRAR FARME DIÁRIO (REGISTRAR META)
     if (customId === 'modal_registrar_meta') {
       const quantidade = parseInt(interaction.fields.getTextInputValue('farme_quantidade'));
 
@@ -1370,20 +1278,16 @@ client.on('interactionCreate', async (interaction) => {
         quantidade
       };
       db.farmes.push(novoFarme);
-      salvarBanco(); // Atualiza painel e presença imediatamente
+      salvarBanco();
 
-      // Confirmar com resposta efêmera para o usuário
       await interaction.reply({ content: `🚜 **Farme registrado com sucesso!** Adicionados **+${formatarNumero(quantidade)} kg** ao baú.`, ephemeral: true });
 
-      // Enviar log para o canal do Discord ID 1525698045537161226
       const canalLogId = '1525698045537161226';
       let canalLog = client.channels.cache.get(canalLogId);
       if (!canalLog) {
         try {
           canalLog = await client.channels.fetch(canalLogId);
-        } catch (e) {
-          console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
-        }
+        } catch (e) {}
       }
 
       const embedLog = new EmbedBuilder()
@@ -1393,12 +1297,9 @@ client.on('interactionCreate', async (interaction) => {
         .setTimestamp();
 
       if (canalLog) {
-        await canalLog.send({ embeds: [embedLog] }).catch(err => {
-          console.error('Erro ao enviar mensagem para o canal de log:', err);
-        });
+        await canalLog.send({ embeds: [embedLog] }).catch(() => null);
       }
 
-      // Enviar anúncio público no canal atual
       const embedPublico = new EmbedBuilder()
         .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
         .setColor('#a855f7')
@@ -1408,7 +1309,6 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.channel.send({ embeds: [embedPublico] });
     }
 
-    // MODAL: RETIRAR AÇO
     if (customId === 'modal_subaco') {
       const quantidade = parseInt(interaction.fields.getTextInputValue('aco_quantidade'));
 
@@ -1428,7 +1328,7 @@ client.on('interactionCreate', async (interaction) => {
       db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
       db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSalesVal);
       db.estoque = db.estoqueKits + db.estoqueVendas;
-      salvarBanco(); // Sincronização em tempo real do painel e status
+      salvarBanco();
 
       await interaction.reply({ content: `⛓️ **Sucesso!** Retirado **-${formatarNumero(quantidade)} kg** proporcionalmente.`, ephemeral: true });
       
@@ -1446,14 +1346,12 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.channel.send({ embeds: [embedPublico] });
     }
 
-    // MODAL: REGISTRAR VENDA
     if (customId === 'modal_vender') {
       const vendedorInput = interaction.fields.getTextInputValue('vendedor_id');
       const armaChave = interaction.fields.getTextInputValue('arma_chave').toLowerCase().trim();
       const quantidade = parseInt(interaction.fields.getTextInputValue('quantidade'));
       const desconto = parseInt(interaction.fields.getTextInputValue('desconto')) || 0;
 
-      // Resolver Vendedor pelo ID ou Menção de forma robusta
       let vendedorMembro = null;
       const cleanId = vendedorInput.replace(/[<@!>]/g, '');
       try {
@@ -1488,7 +1386,6 @@ client.on('interactionCreate', async (interaction) => {
       const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
       const lucroClas = totalVenda - comissaoVendedor;
 
-      // Atualizar estoques no Baú (Deduzir apenas do estoque de vendas)
       db.estoqueVendas = acoVendas - acoNecessario;
       db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
       db.estoque = db.estoqueKits + db.estoqueVendas;
@@ -1508,7 +1405,7 @@ client.on('interactionCreate', async (interaction) => {
       };
 
       db.vendas.push(novaVenda);
-      salvarBanco(); // Sincroniza em tempo real automaticamente
+      salvarBanco();
 
       await interaction.reply({ content: `🎯 Venda **${novaVenda.id}** lançada com sucesso no ERP!`, ephemeral: true });
 
