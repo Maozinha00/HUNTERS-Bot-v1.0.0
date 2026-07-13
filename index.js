@@ -1,6 +1,6 @@
 /**
  * =========================================================================
- * ⚔️ CLÃ HUNTERS — BOT DE GERENCIAMENTO ERP STANDALONE (Discord.js v14) ⚔️
+ * ⚔️ CLÃ HUNTERS - BOT DE GERENCIAMENTO ERP STANDALONE (Discord.js v14) ⚔️
  * =========================================================================
  *
  * Versão Ultra Moderna, Totalmente Automatizada e Sincronizada em Tempo Real.
@@ -8,9 +8,9 @@
  *
  * ⚙️ CONFIGURAÇÕES DE HOSPEDAGEM:
  * 1. Requer Node.js v16.9.0 ou superior.
- * 2. Instalação de dependências: npm install discord.js dotenv
+ * 2. Instalação: npm install discord.js dotenv
  * 3. Configure o arquivo .env:
- *    - DISCORD_TOKEN=Seu_Token_Do_Bot (ou configure no painel da sua hospedagem)
+ *    - DISCORD_TOKEN=Seu_Token_Do_Bot (ou use a variável TOKEN no seu painel)
  *    - PREFIX=!
  *
  * 🔒 CONTROLE DE ACESSO:
@@ -96,6 +96,7 @@ let ultimoPainelMensagem = null;
 // 📦 FUNÇÕES DE BANCO DE DADOS
 // =========================================================================
 
+// Carregar banco de dados ou criar novo
 function carregarBanco() {
   try {
     if (fs.existsSync(DB_FILE)) {
@@ -125,6 +126,7 @@ function carregarBanco() {
         };
       }
       
+      // Manter custo do kit sincronizado
       db.config.kitCost = db.config.kitMeta.custo;
 
       if (db.estoqueKits === undefined || db.estoqueVendas === undefined) {
@@ -141,9 +143,12 @@ function carregarBanco() {
   }
 }
 
+// Salvar banco de dados e atualizar tudo em tempo real
 function salvarBanco(skipPanelUpdate = false) {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+    
+    // Dispara a sincronização em tempo real caso não esteja ignorando
     if (!skipPanelUpdate) {
       atualizarPainel();
     }
@@ -177,7 +182,7 @@ const getVisualLength = (str) => {
       length += 2;
       i++;
     } else if (code === 0xFE0F) {
-      // variation selector, 0 width
+      // zero width
     } else if (code === 0x26D3 || code === 0x23F1) {
       length += 2;
     } else {
@@ -213,20 +218,24 @@ const formatarLinhaTitulo = (titulo) => {
   return `║ ${titulo}${spaces} ║`;
 };
 
+// Helper para verificar autorização (Cargo específico ou Administrador)
 const temPermissaoEstoque = (member) => {
   if (!member) return false;
   return member.roles.cache.has(CARGO_ESTOQUE_ID) || member.permissions.has('Administrator');
 };
 
+// Obter quantidade de Kits da Meta disponíveis no estoque reservado
 function calcularKitsDisponiveis() {
   const custo = (db.config && db.config.kitMeta && db.config.kitMeta.custo) ? db.config.kitMeta.custo : 3260;
   const estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
   return Math.floor(estoqueKits / custo);
 }
 
+// Obter o Embed de Metas de Aço (8.000 kg semanal por pessoa)
 const obterMetasEmbed = () => {
   const statsMap = {};
   
+  // Agrupar aço consumido por usuário em vendas
   db.vendas.forEach(v => {
     const key = v.userName || 'Membro Antigo';
     if (!statsMap[key]) {
@@ -236,6 +245,7 @@ const obterMetasEmbed = () => {
     statsMap[key].count++;
   });
 
+  // Agrupar aço de farmes diários
   if (db.farmes) {
     db.farmes.forEach(f => {
       const key = f.userName || 'Membro Antigo';
@@ -264,6 +274,7 @@ const obterMetasEmbed = () => {
   return embedMetas;
 };
 
+// Obter aço total de farme + vendas de um usuário específico
 function obterAcoTotalUsuario(userId) {
   let total = 0;
   if (db.vendas) {
@@ -283,6 +294,7 @@ function obterAcoTotalUsuario(userId) {
   return total;
 }
 
+// Função auxiliar para verificar se o usuário bateu a meta de 8.000 kg e enviar o anúncio com menção ao cargo
 async function checarMetaAtingida(userId, acoAntes, acoDepois, canal) {
   if (acoAntes < 8000 && acoDepois >= 8000) {
     const CARGO_NOTIFICAR_ID = '1515125826780135485';
@@ -317,6 +329,7 @@ const obterPainelPayload = () => {
   const split = db.config.splitPercent;
   const metaIndividual = db.config.kitMeta?.meta ?? 8000;
 
+  // Calcular estatísticas dinâmicas para o painel
   const statsMap = {};
   db.vendas.forEach(v => {
     const key = v.userId;
@@ -366,6 +379,7 @@ const obterPainelPayload = () => {
     .setColor('#a855f7')
     .setTimestamp();
 
+  // Botões de Interação de cor Roxa (ButtonStyle.Primary)
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('painel_estoque')
@@ -430,7 +444,7 @@ async function atualizarPainel() {
     }
 
     const messageObj = await canal.messages.fetch(db.painelMensagemId).catch(async (err) => {
-      if (err.code === 10008) {
+      if (err.code === 10008) { // Unknown Message
         console.log(`⚠️ [HUNTERS] Mensagem do painel foi apagada. Recriando automaticamente...`);
         db.painelMensagemId = null;
         salvarBanco(true);
@@ -648,9 +662,8 @@ client.on('messageCreate', async (message) => {
     return enviarPainelCentral(message.channel, message.author);
   }
 
-  // COMANDO: AVISO META (COMANDO DE DISPARO DO AVISO PEDIDO)
+  // COMANDO: AVISO META (CRÍTICO - NOVO)
   if (command === 'avisometa' || command === 'geraraviso' || command === 'aviso') {
-    // Apenas Admins ou membros com o cargo de controle do estoque podem disparar
     if (!message.member.permissions.has('Administrator') && !temPermissaoEstoque(message.member)) {
       return message.reply('❌ **Acesso Negado!** Apenas administradores do clã ou membros autorizados com acesso ao estoque podem disparar este aviso.');
     }
@@ -663,7 +676,7 @@ client.on('messageCreate', async (message) => {
       try {
         canalAvisos = await client.channels.fetch(canalAvisosId);
       } catch (e) {
-        return message.reply(`❌ **Erro:** Não consegui localizar o canal de avisos com o ID \`${canalAvisosId}\`. Verifique se o bot possui acesso e permissões de leitura/escrita nele.`);
+        return message.reply(`❌ **Erro:** Não consegui localizar o canal de avisos com o ID \`${canalAvisosId}\`.`);
       }
     }
 
@@ -697,13 +710,13 @@ client.on('messageCreate', async (message) => {
 
   // COMANDO: KIT (SISTEMA DE CALCULO)
   if (command === 'kit') {
-    const acao = args[0]?.toLowerCase();
+    const aco = args[0]?.toLowerCase();
 
-    if (!acao) {
+    if (!aco) {
       return message.reply(`⚠️ **Uso do Comando Kit:**\n\`${PREFIX}kit calcular\` - Calcula capacidade de kits\n\`${PREFIX}kit estoque\` - Detalha o estoque de kits`);
     }
 
-    if (acao === 'calcular') {
+    if (aco === 'calcular') {
       const kits = calcularKitsDisponiveis();
       const custoReal = db.config.kitMeta?.custo ?? 3260;
       const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
@@ -724,7 +737,7 @@ client.on('messageCreate', async (message) => {
       });
     }
 
-    if (acao === 'estoque') {
+    if (aco === 'estoque') {
       const kits = calcularKitsDisponiveis();
       const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
 
@@ -811,7 +824,7 @@ client.on('messageCreate', async (message) => {
       return message.reply(`❌ **Aço para Vendas Insuficiente!** É necessário **${formatarNumero(acoNecessario)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`);
     }
 
-    const precoBase = arma.preco * quantidade;
+    const precoBase = arma.preco * quantity;
     const valorDesconto = precoBase * (desconto / 100);
     const totalVenda = precoBase - valorDesconto;
     const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
@@ -852,7 +865,7 @@ client.on('messageCreate', async (message) => {
         { name: '📉 Desconto', value: `**${desconto}%**`, inline: true },
         { name: '💰 Total Pago', value: `**${formatarMoeda(totalVenda)}**` },
         { name: '💸 Split Vendedor (Comissão)', value: `**${formatarMoeda(comissaoVendedor)}** (${db.config.splitPercent}%)`, inline: true },
-        { name: '👑 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}** (${100 - db.config.splitPercent}%)`, inline: true },
+        { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}** (${100 - db.config.splitPercent}%)`, inline: true },
         { name: '⛓️ Aço de Vendas Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
       )
       .setFooter({ text: `ID da Transação: ${novaVenda.id}` })
@@ -1279,7 +1292,6 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // RECEBIMENTO DE SUBMISSÃO DOS MODAIS DO DISCORD
   if (interaction.isModalSubmit()) {
     const customId = interaction.customId;
 
@@ -1438,7 +1450,7 @@ client.on('interactionCreate', async (interaction) => {
 
       const arma = ARMAS[armaChave];
       if (!arma) {
-        return interaction.reply({ content: '❌ **Arma inválida!** Opções disponíveis: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\`.', ephemeral: true });
+        return interaction.reply({ content: '❌ **Arma inválida!** Opções: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\`.', ephemeral: true });
       }
 
       if (isNaN(quantidade) || quantidade <= 0) {
@@ -1449,7 +1461,7 @@ client.on('interactionCreate', async (interaction) => {
       const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * ((db.config.percentSteelForSales || 70) / 100));
 
       if (acoVendas < acoNecessario) {
-        return interaction.reply({ content: `❌ **Aço para Vendas Insuficiente!** Necessário **${formatarNumero(acoNecessario)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`, ephemeral: true });
+        return interaction.reply({ content: `❌ **Aço Insuficiente!** Necessário **${formatarNumero(acoNecessario)} kg**. O baú de vendas tem **${formatarNumero(acoVendas)} kg**.`, ephemeral: true });
       }
 
       const precoBase = arma.preco * quantidade;
@@ -1495,8 +1507,8 @@ client.on('interactionCreate', async (interaction) => {
           { name: '📉 Desconto', value: `**${desconto}%**`, inline: true },
           { name: '💰 Total Pago', value: `**${formatarMoeda(totalVenda)}**` },
           { name: '💸 Split Vendedor', value: `**${formatarMoeda(comissaoVendedor)}** (Comissão de ${db.config.splitPercent}%)`, inline: true },
-          { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}** (Fundo de ${100 - db.config.splitPercent}%)`, inline: true },
-          { name: '⛓️ Aço de Vendas Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
+          { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}**`, inline: true },
+          { name: '⛓️ Aço Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
         )
         .setFooter({ text: `ID: ${novaVenda.id} • Lançado via Painel Interativo` })
         .setTimestamp();
