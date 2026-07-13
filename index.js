@@ -745,6 +745,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // TOKEN DE LOGIN DO CLIENT
-client.login(process.env.DISCORD_TOKEN).catch(err => {
+console.log("Token carregado?", !!process.env.TOKEN);
+console.log("Tamanho:", process.env.TOKEN?.length);
   console.error("❌ Erro fatal ao iniciar o cliente Discord. Verifique se o DISCORD_TOKEN informado no arquivo .env está correto:", err.message);
 });
