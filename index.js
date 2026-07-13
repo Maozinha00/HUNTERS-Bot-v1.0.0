@@ -1,40 +1,104 @@
 /**
- * =========================================================================
- * ⚔️ CLÃ HUNTERS - BOT DE GERENCIAMENTO ERP STANDALONE (Discord.js v14) ⚔️
- * =========================================================================
- *
- * Versão Ultra Moderna, Totalmente Automatizada e Sincronizada em Tempo Real.
- * Adaptada para o Sistema de KIT DA META (8.000 Aços de Meta, 3.260 Aços por Kit).
- *
- * ⚙️ CONFIGURAÇÕES DE HOSPEDAGEM:
- * 1. Requer Node.js v16.9.0 ou superior.
- * 2. Instalação: npm install discord.js dotenv
- * 3. Configure o arquivo .env:
- *    - DISCORD_TOKEN=Seu_Token_Do_Bot
- *    - PREFIX=!
- *
- * 🔒 CONTROLE DE ACESSO:
- * - Apenas membros com o cargo ID "1523277774436171796" (ou administradores)
- *   podem adicionar ou retirar aço do estoque.
+ * 🐺 HUNTERS ERP - DISCORD BOT CENTRALIZADO (v4.0)
+ * 
+ * Script completo pronto para rodar.
+ * Desenvolvido para o Clã Hunters. Mantém o controle de estoque, 
+ * finanças, comissões de vendas, metas semanais e avisos de meta.
+ * 
+ * Requisitos:
+ *   - Node.js v16.11.0 ou superior
+ *   - Dependências: npm install discord.js dotenv
  */
 
-require('dotenv').config();
 const { 
   Client, 
   GatewayIntentBits, 
   EmbedBuilder, 
   ActionRowBuilder, 
   ButtonBuilder, 
-  ButtonStyle,
-  ActivityType,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle
+  ButtonStyle, 
+  ModalBuilder, 
+  TextInputBuilder, 
+  TextInputStyle,
+  InteractionType,
+  ActivityType
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config();
 
-// Inicialização do Client do Discord com os Intents necessários
+// CONFIGURAÇÕES GERAIS DO CLÃ (Valores padrão)
+const CONFIG = {
+  PREFIX: '!',
+  CANAL_AVISOS_ID: '1515125864033943712',
+  CARGO_NOTIFICAR_ID: '1515125826780135485',
+  CANAL_PAINEL_ID: '1523844178151473193',
+  META_ACO_KG: 8000,
+  CUSTO_KIT_KG: 3260,
+  SPLIT_CLAN_PERCENT: 50, // 50% Clã, 50% Membro
+  PERCENT_STEEL_FOR_KITS: 60, // 60% para kits
+  PERCENT_STEEL_FOR_SALES: 40 // 40% para vendas
+};
+
+// TABELA DE ARMAS, CUSTOS DE AÇO E PREÇOS
+const ARMAS = {
+  ak47: { nome: "AK-47", aco: 1000, preco: 180000 },
+  m4a1: { nome: "M4A1", aco: 1200, preco: 210000 },
+  g36: { nome: "G36", aco: 900, preco: 160000 },
+  smg: { nome: "SMG", aco: 700, preco: 120000 },
+  glock: { nome: "Glock", aco: 300, preco: 45000 },
+  five_seven: { nome: "Five-Seven", aco: 400, preco: 60000 },
+  tec9: { nome: "Tec-9", aco: 450, preco: 65000 },
+  hk45: { nome: "HK-45", aco: 350, preco: 50000 }
+};
+
+// COMPONENTES DOS KITS DA META
+const KIT_META_ITENS = {
+  ak47: { nome: "1x AK-47", aco: 1000, quantidade: 1 },
+  coletes: { nome: "5x Coletes Táticos", aco: 1500, quantidade: 5 },
+  municao: { nome: "250x Munições de Fuzil", aco: 760, quantidade: 250 }
+};
+
+// INICIALIZAÇÃO DO BANCO DE DADOS LOCAL (hunters-db.json)
+const DB_FILE = path.join(__dirname, 'hunters-db.json');
+let db = {
+  estoque: 150000, // estoque inicial em kg
+  estoqueKits: 90000,
+  estoqueVendas: 60000,
+  caixa: 15000000, // caixa inicial em R$
+  vendas: [],
+  farmes: [],
+  config: { ...CONFIG },
+  painelCanalId: null,
+  painelMensagemId: null
+};
+
+// Carregar dados salvos
+function carregarBanco() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const data = fs.readFileSync(DB_FILE, 'utf-8');
+      db = JSON.parse(data);
+      console.log('💾 [HUNTERS] Banco de dados carregado com sucesso!');
+    } else {
+      salvarBanco();
+      console.log('💾 [HUNTERS] Novo arquivo de banco de dados criado!');
+    }
+  } catch (err) {
+    console.error('❌ [HUNTERS] Erro ao carregar banco de dados:', err.message);
+  }
+}
+
+// Salvar dados no arquivo JSON
+function salvarBanco() {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('❌ [HUNTERS] Erro ao salvar banco de dados:', err.message);
+  }
+}
+
+// INICIALIZANDO CLIENT DO DISCORD
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -44,639 +108,181 @@ const client = new Client({
   ]
 });
 
-const PREFIX = process.env.PREFIX || '!';
-const TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
-const DB_FILE = path.join(__dirname, 'hunters_database.json');
-
-// ID do Cargo autorizado a colocar e retirar estoque
-const CARGO_ESTOQUE_ID = '1523277774436171796';
-
-// Estado Inicial do Banco de Dados
-let db = {
-  estoque: 69000,         // Aço total do baú em kg
-  estoqueKits: 20700,     // Aço reservado para Kits (30% padrão)
-  estoqueVendas: 48300,   // Aço reservado para Vendas (70% padrão)
-  caixa: 280000,          // R$ 280.000 padrão
-  vendas: [],
-  farmes: [],             // Histórico de farmes diários
-  painelCanalId: null,    // ID do Canal do Painel Operacional Central salvo
-  painelMensagemId: null, // ID da Mensagem do Painel Operacional Central salvo
-  config: {
-    splitPercent: 30,           // % de comissão do vendedor (membro)
-    steelClanPercent: 10,       // % de retenção de aço pro clã
-    kitCost: 3260,              // Custo em kg do Kit de Meta
-    percentSteelForKits: 30,    // % de aço destinado a Kits
-    percentSteelForSales: 70,   // % de aço destinado a Vendas de Armas
-    kitMeta: {
-      meta: 8000,               // Meta necessária em aços
-      custo: 3260,              // Custo real do kit da meta (3.260 Aços)
-      itens: {
-        ak47: { nome: "AK-47", quantidade: 1, aco: 2700 },
-        glock17: { nome: "Glock 17", quantidade: 1, aco: 120 },
-        box556: { nome: "Box 5.56", quantidade: 3, aco: 360 },
-        boxPistola: { nome: "Box Pistola", quantidade: 2, aco: 80 }
-      }
-    }
-  }
-};
-
-// Armamentos Cadastrados no ERP HUNTERS
-const ARMAS = {
-  'ak47': { nome: "AK-47", preco: 250000, aco: 2700, icon: "🔫" },
-  'awp': { nome: "AWP Sniper", preco: 500000, aco: 3000, icon: "🎯" },
-  'm16': { nome: "M16", preco: 230000, aco: 2700, icon: "⚔️" },
-  'sawedoff': { nome: "Sawed-Off", preco: 120000, aco: 1200, icon: "💥" },
-  'glock17': { nome: "Glock 17", preco: 15000, aco: 120, icon: "🔫" }
-};
-
-// Referência global em memória para manter o último painel operacional sempre sincronizado e ativo
-let ultimoPainelMensagem = null;
-
-// =========================================================================
-// 📦 FUNÇÕES DE BANCO DE DADOS
-// =========================================================================
-
-// Carregar banco de dados ou criar novo
-function carregarBanco() {
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const dados = fs.readFileSync(DB_FILE, 'utf8');
-      db = JSON.parse(dados);
-      console.log('📦 [HUNTERS] Banco de dados carregado com sucesso!');
-      
-      // Sincronizar e injetar configurações e novas chaves caso ausentes
-      if (!db.config) db.config = {};
-      if (db.config.percentSteelForKits === undefined) db.config.percentSteelForKits = 30;
-      if (db.config.percentSteelForSales === undefined) db.config.percentSteelForSales = 70;
-      if (db.config.splitPercent === undefined) db.config.splitPercent = 30;
-      if (db.farmes === undefined) db.farmes = [];
-      if (db.painelCanalId === undefined) db.painelCanalId = null;
-      if (db.painelMensagemId === undefined) db.painelMensagemId = null;
-      
-      if (db.config.kitMeta === undefined) {
-        db.config.kitMeta = {
-          meta: 8000,
-          custo: 3260,
-          itens: {
-            ak47: { nome: "AK-47", quantidade: 1, aco: 2700 },
-            glock17: { nome: "Glock 17", quantidade: 1, aco: 120 },
-            box556: { nome: "Box 5.56", quantidade: 3, aco: 360 },
-            boxPistola: { nome: "Box Pistola", quantidade: 2, aco: 80 }
-          }
-        };
-      }
-      
-      // Manter custo do kit sincronizado
-      db.config.kitCost = db.config.kitMeta.custo;
-
-      if (db.estoqueKits === undefined || db.estoqueVendas === undefined) {
-        db.estoqueKits = Math.floor(db.estoque * (db.config.percentSteelForKits / 100));
-        db.estoqueVendas = db.estoque - db.estoqueKits;
-        salvarBanco(true);
-      }
-    } else {
-      salvarBanco(true);
-      console.log('📦 [HUNTERS] Novo arquivo de banco de dados criado!');
-    }
-  } catch (erro) {
-    console.error('❌ Erro ao carregar banco de dados:', erro);
-  }
+// ATUALIZAR PARCELAS DE ESTOQUE
+function recalcularEstoqueDividido() {
+  const pctKits = db.config.PERCENT_STEEL_FOR_KITS || 60;
+  db.estoqueKits = Math.floor((db.estoque * pctKits) / 100);
+  db.estoqueVendas = db.estoque - db.estoqueKits;
 }
 
-// Salvar banco de dados e atualizar tudo em tempo real
-function salvarBanco(skipPanelUpdate = false) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
-    
-    // Dispara a sincronização em tempo real caso não esteja ignorando
-    if (!skipPanelUpdate) {
-      atualizarPainel();
-    }
-    atualizarStatusPresenca();
-  } catch (erro) {
-    console.error('❌ Erro ao salvar banco de dados:', erro);
-  }
-}
-
-// =========================================================================
-// ⚙️ HELPERS REUTILIZÁVEIS DE LAYOUT E FORMATAÇÃO
-// =========================================================================
-
-const formatarMoeda = (valor) => {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+// FORMATADORES DE TEXTO
+const formatarMoeda = (val) => {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(val);
+};
+const formatarNumero = (val) => {
+  return new Intl.NumberFormat('pt-BR').format(val);
 };
 
-const formatarNumero = (num) => {
-  return new Intl.NumberFormat('pt-BR').format(num);
-};
-
-const formatarMoedaResumida = (valor) => {
-  return "R$ " + formatarNumero(Math.floor(valor));
-};
-
-const getVisualLength = (str) => {
-  let length = 0;
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    if (code >= 0xD800 && code <= 0xDBFF) {
-      length += 2;
-      i++;
-    } else if (code === 0xFE0F) {
-      // zero width
-    } else if (code === 0x26D3 || code === 0x23F1) {
-      length += 2;
-    } else {
-      length += 1;
-    }
-  }
-  return length;
-};
-
-const formatarLinhaBox = (label, valor) => {
-  const insideWidth = 44;
-  const labelLen = getVisualLength(label);
-  const valorLen = getVisualLength(valor);
-  const spacesCount = insideWidth - labelLen - valorLen;
-  const spaces = ' '.repeat(Math.max(1, spacesCount));
-  return `║ ${label}${spaces}${valor} ║`;
-};
-
-const formatarLinhaCentrada = (texto) => {
-  const insideWidth = 44;
-  const len = getVisualLength(texto);
-  const totalSpaces = insideWidth - len;
-  const leftSpaces = Math.max(0, Math.floor(totalSpaces / 2));
-  const rightSpaces = Math.max(0, totalSpaces - leftSpaces);
-  return `║ ${' '.repeat(leftSpaces)}${texto}${' '.repeat(rightSpaces)} ║`;
-};
-
-const formatarLinhaTitulo = (titulo) => {
-  const insideWidth = 44;
-  const labelLen = getVisualLength(titulo);
-  const spacesCount = insideWidth - labelLen;
-  const spaces = ' '.repeat(Math.max(0, spacesCount));
-  return `║ ${titulo}${spaces} ║`;
-};
-
-// Helper para verificar autorização (Cargo específico ou Administrador)
-const temPermissaoEstoque = (member) => {
-  if (!member) return false;
-  return member.roles.cache.has(CARGO_ESTOQUE_ID) || member.permissions.has('Administrator');
-};
-
-// Obter quantidade de Kits da Meta disponíveis no estoque reservado
-function calcularKitsDisponiveis() {
-  const custo = (db.config && db.config.kitMeta && db.config.kitMeta.custo) ? db.config.kitMeta.custo : 3260;
-  const estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
-  return Math.floor(estoqueKits / custo);
-}
-
-// Obter o Embed de Metas de Aço (8.000 kg semanal por pessoa)
-const obterMetasEmbed = () => {
-  const statsMap = {};
-  
-  // Agrupar aço consumido por usuário em vendas
-  db.vendas.forEach(v => {
-    const key = v.userName || 'Membro Antigo';
-    if (!statsMap[key]) {
-      statsMap[key] = { aco: 0, count: 0 };
-    }
-    statsMap[key].aco += (v.acoConsumido || 0);
-    statsMap[key].count++;
-  });
-
-  // Agrupar aço de farmes diários
-  if (db.farmes) {
-    db.farmes.forEach(f => {
-      const key = f.userName || 'Membro Antigo';
-      if (!statsMap[key]) {
-        statsMap[key] = { aco: 0, count: 0 };
-      }
-      statsMap[key].aco += (f.quantidade || 0);
-    });
-  }
-
-  let list = "";
-  Object.entries(statsMap).forEach(([userName, stats]) => {
-    const percent = Math.min(100, Math.floor((stats.aco / 8000) * 100));
-    const numBlocks = Math.min(10, Math.floor(percent / 10));
-    const bar = "█".repeat(numBlocks) + "░".repeat(10 - numBlocks);
-    const achieved = stats.aco >= 8000 ? "🎉 **META BATIDA!**" : `${percent}%`;
-    list += `👤 **${userName}**: \`${bar}\` **${formatarNumero(stats.aco)}** / 8.000 kg (${achieved})\n`;
-  });
-
-  const embedMetas = new EmbedBuilder()
-    .setTitle('🎯 METAS DE AÇO — FACÇÃO HUNTERS')
-    .setDescription(`Meta individual semanal de faturar/consumir **8.000 kg** de aço por pessoa:\n\n${list || 'Nenhuma venda registrada ainda para calcular as metas.'}`)
-    .setColor('#a855f7')
-    .setTimestamp();
-
-  return embedMetas;
-};
-
-// Obter aço total de farme + vendas de um usuário específico
-function obterAcoTotalUsuario(userId) {
+// OBTER ACUMULADO DE AÇO DE UM MEMBRO (FARMES)
+function obterAcoTotalMembro(userId) {
   let total = 0;
-  if (db.vendas) {
-    db.vendas.forEach(v => {
-      if (v.userId === userId) {
-        total += (v.acoConsumido || 0);
-      }
-    });
-  }
   if (db.farmes) {
     db.farmes.forEach(f => {
-      if (f.userId === userId) {
-        total += (f.quantidade || 0);
-      }
+      if (f.userId === userId) total += f.quantidade;
     });
   }
   return total;
 }
 
-// Função auxiliar para verificar se o usuário bateu a meta de 8.000 kg e enviar o anúncio com menção ao cargo
-async function checarMetaAtingida(userId, acoAntes, acoDepois, canal) {
-  if (acoAntes < 8000 && acoDepois >= 8000) {
-    const CARGO_NOTIFICAR_ID = '1515125826780135485';
-    
-    const embedComemoracao = new EmbedBuilder()
-      .setTitle('🎉 META DE AÇO BATIDA! 🎉')
-      .setColor('#a855f7')
-      .setDescription(`🏆 **Excelente trabalho!**\n\n👤 **Membro:** <@${userId}>\n⛓️ **Total Acumulado:** **${formatarNumero(acoDepois)} kg** / 8.000 kg\n\nO membro completou com sucesso a meta de aço para a facção! 🐺`)
-      .setFooter({ text: 'Hunters ERP • Meta Semanal de Aço' })
-      .setTimestamp();
+// CHECAR SE MEMBRO BATEU A META E MANDAR AVISO
+async function verificarMetaAtingida(userId, userName, totalAcoAnterior, totalAcoNovo, guild) {
+  const meta = db.config.META_ACO_KG || 8000;
+  if (totalAcoAnterior < meta && totalAcoNovo >= meta) {
+    const canalAvisos = guild.channels.cache.get(db.config.CANAL_AVISOS_ID) 
+      || await guild.channels.fetch(db.config.CANAL_AVISOS_ID).catch(() => null);
 
-    if (canal) {
-      await canal.send({
-        content: `🚨 **ATENÇÃO** <@&${CARGO_NOTIFICAR_ID}>! 🚨\n🏆 O membro <@${userId}> acabou de bater a meta de **8.000 kg** de aço! 🎉`,
-        embeds: [embedComemoracao]
-      }).catch(err => {
-        console.error('Erro ao enviar anúncio de meta batida:', err);
-      });
+    if (canalAvisos) {
+      const embedMeta = new EmbedBuilder()
+        .setTitle('🎉 META DE AÇO ATINGIDA! 🎉')
+        .setColor('#a855f7')
+        .setDescription(`🏆 **Excelente trabalho na facção!**\n\n👤 **Membro:** <@${userId}> (${userName})\n⛓️ **Aço Acumulado:** **${formatarNumero(totalAcoNovo)} kg** / ${formatarNumero(meta)} kg\n\nO membro bateu a meta semanal de aço e garantiu o direito de retirar o seu **Kit de Meta**! Foco total! 🐺`)
+        .setFooter({ text: 'Hunters ERP • Sorte aos Fortes' })
+        .setTimestamp();
+
+      await canalAvisos.send({
+        content: `🚨 **META BATIDA!** <@${userId}> superou o objetivo semanal de aço! Parabéns! ⚔️`,
+        embeds: [embedMeta]
+      }).catch(() => null);
     }
   }
 }
 
-// =========================================================================
-// 🖥️ GERAÇÃO DO PAYLOAD DO PAINEL
-// =========================================================================
+// GERAR O PAYLOAD VISUAL DO PAINEL OPERACIONAL
+function obterPainelPayload() {
+  const kitsProntos = Math.floor(db.estoqueKits / db.config.CUSTO_KIT_KG);
 
-const obterPainelPayload = () => {
-  const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
-  const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
-  const kitsProntos = calcularKitsDisponiveis();
-  const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
-  const split = db.config.splitPercent;
-  const metaIndividual = db.config.kitMeta?.meta ?? 8000;
-
-  // Calcular estatísticas dinâmicas para o painel
-  const statsMap = {};
-  db.vendas.forEach(v => {
-    const key = v.userId;
-    if (!statsMap[key]) {
-      statsMap[key] = { aco: 0 };
-    }
-    statsMap[key].aco += (v.acoConsumido || v.aco || 0);
-  });
-  if (db.farmes) {
-    db.farmes.forEach(f => {
-      const key = f.userId;
-      if (!statsMap[key]) {
-        statsMap[key] = { aco: 0 };
-      }
-      statsMap[key].aco += (f.quantidade || 0);
-    });
-  }
-  const metasBatidas = Object.values(statsMap).filter(s => s.aco >= metaIndividual).length;
-  const vendasRegistradasCount = db.vendas ? db.vendas.length : 0;
-
-  let painelTexto = "```\n";
-  painelTexto += "╔══════════════════════════════════════════════╗\n";
-  painelTexto += formatarLinhaCentrada("🐺 HUNTERS ERP • CENTRAL v4.0") + "\n";
-  painelTexto += "╠══════════════════════════════════════════════╣\n";
-  painelTexto += formatarLinhaTitulo("📦 ESTOQUE DE RECURSOS") + "\n";
-  painelTexto += formatarLinhaBox("├─ ⛓️ Aço Total:", `${formatarNumero(db.estoque)} kg`) + "\n";
-  painelTexto += formatarLinhaBox("├─ 🔫 Aço Vendas:", `${formatarNumero(acoVendas)} kg (${db.config.percentSteelForSales || 70}%)`) + "\n";
-  painelTexto += formatarLinhaBox("├─ 🎁 Aço Kits:", `${formatarNumero(acoKits)} kg (${db.config.percentSteelForKits || 30}%)`) + "\n";
-  painelTexto += formatarLinhaBox("└─ 📦 Kits Prontos:", `${formatarNumero(kitsProntos)} Kits`) + "\n";
-  painelTexto += "╠══════════════════════════════════════════════╣\n";
-  painelTexto += formatarLinhaTitulo("💰 CONTROLE FINANCEIRO") + "\n";
-  painelTexto += formatarLinhaBox("├─ 🏦 Caixa do Clã:", formatarMoedaResumida(db.caixa)) + "\n";
-  painelTexto += formatarLinhaBox("├─ 💵 Total Vendido:", formatarMoedaResumida(totalVendido)) + "\n";
-  painelTexto += formatarLinhaBox("└─ 📈 Divisão:", `🏦 ${100 - split}% Clã | 💸 ${split}% Membro`) + "\n";
-  painelTexto += "╠══════════════════════════════════════════════╣\n";
-  painelTexto += formatarLinhaTitulo("🎯 METAS & ESTATÍSTICAS") + "\n";
-  painelTexto += formatarLinhaBox("├─ 🏆 Objetivo:", `${formatarNumero(metaIndividual)} kg por Membro`) + "\n";
-  painelTexto += formatarLinhaBox("├─ 👥 Metas Batidas:", `${metasBatidas} Membros`) + "\n";
-  painelTexto += formatarLinhaBox("└─ 🛒 Vendas Registradas:", `${vendasRegistradasCount} Vendas`) + "\n";
-  painelTexto += "╠══════════════════════════════════════════════╣\n";
-  painelTexto += formatarLinhaCentrada("🟢 Online | 💾 Sincronizado | ⏱️ Real-Time") + "\n";
-  painelTexto += "╚══════════════════════════════════════════════╝\n";
-  painelTexto += "```";
-
-  const embedPainel = new EmbedBuilder()
-    .setDescription(painelTexto)
+  const embed = new EmbedBuilder()
+    .setTitle('🐺 HUNTERS ERP • PAINEL OPERACIONAL')
     .setColor('#a855f7')
+    .setDescription(
+      `Bem-vindo à central de inteligência e logística do clã **Hunters**. Aqui você pode atualizar o estoque do baú, registrar seus farmes individuais de aço e lançar vendas de armas com divisão automática de lucros.\n\n` +
+      `📊 **ESTADO ATUAL DO ESTOQUE**\n` +
+      `⛓️ **Estoque Geral:** **${formatarNumero(db.estoque)} kg** de aço\n` +
+      `└─ 🎁 Reservado p/ Kits (${db.config.PERCENT_STEEL_FOR_KITS}%): **${formatarNumero(db.estoqueKits)} kg**\n` +
+      `└─ 🔫 Reservado p/ Vendas (${db.config.PERCENT_STEEL_FOR_SALES}%): **${formatarNumero(db.estoqueVendas)} kg**\n\n` +
+      `🎁 **SITUAÇÃO DE KITS DA META**\n` +
+      `📦 **Kits Prontos p/ Retirada:** **${formatarNumero(kitsProntos)}** kits *(Custo: ${formatarNumero(db.config.CUSTO_KIT_KG)} kg/kit)*\n\n` +
+      `🏦 **RECURSOS DO CLÃ**\n` +
+      `💰 **Caixa Líquido do Clã:** **${formatarMoeda(db.caixa)}**\n` +
+      `💸 **Divisão de Vendas:** **${100 - db.config.SPLIT_CLAN_PERCENT}%** Clã | **${db.config.SPLIT_CLAN_PERCENT}%** Comissão Membro\n\n` +
+      `⏱️ *Última sincronização em tempo real: <t:${Math.floor(Date.now() / 1000)}:R>*`
+    )
+    .setFooter({ text: 'Hunters ERP • Clique nos botões abaixo para abrir os formulários' })
     .setTimestamp();
 
-  // Botões de Interação de cor Roxa (ButtonStyle.Primary)
+  // Linha de Botões 1: Consultas e Registro de Farme
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('painel_estoque')
+      .setCustomId('btn_consultar_estoque')
       .setLabel('📦 Consultar Estoque')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId('painel_caixa')
-      .setLabel('🏦 Caixa')
+      .setCustomId('btn_consultar_caixa')
+      .setLabel('🏦 Consultar Caixa')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId('painel_registrar_meta')
-      .setLabel('🎯 Registrar Meta')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('painel_addaco')
-      .setLabel('➕ Adicionar Aço')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('painel_subaco')
-      .setLabel('➖ Retirar Aço')
-      .setStyle(ButtonStyle.Primary)
+      .setCustomId('btn_registrar_farme')
+      .setLabel('🎯 Registrar Farme')
+      .setStyle(ButtonStyle.Success)
   );
 
+  // Linha de Botões 2: Financeiro e Estoque Manual
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('painel_venda')
+      .setCustomId('btn_registrar_venda')
       .setLabel('💰 Registrar Venda')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId('painel_kits')
-      .setLabel('🎁 Kits Meta')
-      .setStyle(ButtonStyle.Primary),
+      .setCustomId('btn_add_aco')
+      .setLabel('➕ Adicionar Aço')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId('painel_ranking')
-      .setLabel('🏆 Ranking')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('painel_metas')
-      .setLabel('🎯 Metas Aço')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId('painel_historico')
-      .setLabel('📜 Histórico')
-      .setStyle(ButtonStyle.Primary)
+      .setCustomId('btn_retirar_aco')
+      .setLabel('➖ Retirar Aço')
+      .setStyle(ButtonStyle.Danger)
   );
 
-  return { embeds: [embedPainel], components: [row1, row2] };
-};
+  // Linha de Botões 3: Estatísticas e Info
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('btn_ver_ranking')
+      .setLabel('🏆 Ranking de Vendedores')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('btn_ver_detalhes_kit')
+      .setLabel('🎁 Detalhes do Kit')
+      .setStyle(ButtonStyle.Secondary)
+  );
 
-// =========================================================================
-// 🔄 FUNÇÕES DE SINCRONIZAÇÃO AUTOMÁTICA EM TEMPO REAL
-// =========================================================================
-
-async function atualizarPainel() {
-  try {
-    if (!db.painelCanalId || !db.painelMensagemId) return;
-
-    const canal = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
-    if (!canal) {
-      console.log(`⚠️ [HUNTERS] Canal do painel não encontrado: ${db.painelCanalId}`);
-      return;
-    }
-
-    const messageObj = await canal.messages.fetch(db.painelMensagemId).catch(async (err) => {
-      if (err.code === 10008) { // Unknown Message
-        console.log(`⚠️ [HUNTERS] Mensagem do painel foi apagada. Recriando automaticamente...`);
-        db.painelMensagemId = null;
-        salvarBanco(true);
-        await criarPainel(canal);
-      }
-      return null;
-    });
-
-    if (!messageObj) return;
-
-    const payload = obterPainelPayload();
-    await messageObj.edit(payload).then(msg => {
-      ultimoPainelMensagem = msg;
-    }).catch(async (err) => {
-      if (err.code === 10008) {
-        console.log(`⚠️ [HUNTERS] Mensagem do painel foi apagada ao editar. Recriando...`);
-        db.painelMensagemId = null;
-        salvarBanco(true);
-        await criarPainel(canal);
-      } else {
-        console.error('❌ [HUNTERS] Erro ao editar painel central:', err.message);
-      }
-    });
-
-    atualizarStatusPresenca();
-  } catch (e) {
-    console.error('❌ [HUNTERS] Erro geral ao atualizar painel central:', e.message);
-  }
+  return { embeds: [embed], components: [row1, row2, row3] };
 }
 
-async function criarPainel(canal) {
-  if (!canal) return;
+// ATUALIZAR A MENSAGEM DO PAINEL EXISTENTE
+async function atualizarPainel(guild) {
+  if (!db.painelCanalId || !db.painelMensagemId) return;
 
-  if (db.painelCanalId && db.painelMensagemId) {
-    try {
-      const canalSalvo = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
-      if (canalSalvo) {
-        const msg = await canalSalvo.messages.fetch(db.painelMensagemId).catch(() => null);
-        if (msg) {
-          console.log(`📦 [HUNTERS] Painel operacional já existe. Apenas atualizando...`);
-          ultimoPainelMensagem = msg;
-          await atualizarPainel();
-          return;
-        }
-      }
-    } catch (e) {
-      console.log(`[HUNTERS] Erro ao buscar mensagem em criarPainel:`, e.message);
-    }
-  }
-
-  console.log(`📦 [HUNTERS] Criando novo painel central no canal #${canal.name}...`);
-  const payload = obterPainelPayload();
   try {
-    const msg = await canal.send(payload);
-    db.painelCanalId = canal.id;
-    db.painelMensagemId = msg.id;
-    ultimoPainelMensagem = msg;
-    salvarBanco(true);
-    console.log(`✅ [HUNTERS] Novo painel principal criado e IDs salvos com sucesso!`);
-    atualizarStatusPresenca();
-  } catch (err) {
-    console.error("❌ [HUNTERS] Erro ao enviar painel operacional:", err.message);
-  }
-}
+    const canal = guild.channels.cache.get(db.painelCanalId) 
+      || await guild.channels.fetch(db.painelCanalId).catch(() => null);
 
-function atualizarStatusPresenca() {
-  try {
-    if (!client.user) return;
-
-    let topVendedorStr = 'Nenhum';
-    if (db.vendas && db.vendas.length > 0) {
-      const rankingUser = {};
-      db.vendas.forEach(v => {
-        if (!rankingUser[v.userName]) rankingUser[v.userName] = 0;
-        rankingUser[v.userName] += v.total;
-      });
-      const topVendedor = Object.entries(rankingUser).sort((a, b) => b[1] - a[1])[0];
-      if (topVendedor) {
-        topVendedorStr = `${topVendedor[0]}`;
-      }
-    }
-
-    const kitsProntos = calcularKitsDisponiveis();
-    const statusText = `⛓️ ${formatarNumero(db.estoque)}kg | 🏦 R$ ${formatarNumero(Math.floor(db.caixa))} | 🎁 ${kitsProntos} Kits | 🏆 Top: ${topVendedorStr}`;
-
-    client.user.setPresence({
-      activities: [{ 
-        name: statusText.slice(0, 127), 
-        type: ActivityType.Playing 
-      }],
-      status: 'dnd'
-    });
-  } catch (e) {
-    console.error('❌ [HUNTERS] Erro ao atualizar status de presença:', e.message);
-  }
-}
-
-const enviarPainelCentral = async (channel, targetUser = null) => {
-  if (db.painelCanalId === channel.id && db.painelMensagemId) {
-    try {
-      const msg = await channel.messages.fetch(db.painelMensagemId).catch(() => null);
+    if (canal) {
+      const msg = await canal.messages.fetch(db.painelMensagemId).catch(() => null);
       if (msg) {
-        ultimoPainelMensagem = msg;
-        await atualizarPainel();
-        if (targetUser) {
-          await channel.send({ content: `Olá ${targetUser}, o painel central já está ativo neste canal!`, ephemeral: true }).catch(() => null);
-        }
-        return;
+        await msg.edit(obterPainelPayload()).catch(() => null);
+        console.log('✅ [HUNTERS] Painel central atualizado com sucesso!');
       }
-    } catch (e) {}
-  }
-
-  if (db.painelCanalId && db.painelMensagemId) {
-    try {
-      const canalAntigo = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
-      if (canalAntigo) {
-        const msgAntiga = await canalAntigo.messages.fetch(db.painelMensagemId).catch(() => null);
-        if (msgAntiga) {
-          await msgAntiga.delete().catch(() => null);
-          console.log(`[HUNTERS] Painel antigo no canal ${db.painelCanalId} foi apagado.`);
-        }
-      }
-    } catch (e) {
-      console.log(`[HUNTERS] Não foi possível deletar o painel antigo:`, e.message);
     }
-    db.painelMensagemId = null;
-    salvarBanco(true);
+  } catch (err) {
+    console.error('❌ [HUNTERS] Erro ao editar mensagem do painel:', err.message);
   }
+}
 
-  await criarPainel(channel);
-  if (targetUser) {
-    await channel.send({ content: `Olá ${targetUser}, aqui está o painel central:`, ephemeral: true }).catch(() => null);
-  }
-};
-
-setInterval(async () => {
-  await atualizarPainel();
-}, 10000);
-
-// =========================================================================
-// 🟢 EVENTO READY (INICIALIZAÇÃO E AUTO-LOCALIZAÇÃO)
-// =========================================================================
-
-client.once('ready', async () => {
-  console.log(`🤖 [HUNTERS] Bot online como ${client.user.tag}!`);
+// QUANDO O BOT ENTRAR EM ATIVIDADE
+client.once('ready', () => {
   carregarBanco();
-  
-  if (db.painelCanalId && db.painelMensagemId) {
-    try {
-      const canal = client.channels.cache.get(db.painelCanalId) || await client.channels.fetch(db.painelCanalId).catch(() => null);
-      if (canal) {
-        const msg = await canal.messages.fetch(db.painelMensagemId).catch(() => null);
-        if (msg) {
-          ultimoPainelMensagem = msg;
-          console.log(`📦 [HUNTERS] Painel central localizado na inicialização com sucesso!`);
-          await atualizarPainel();
-        } else {
-          console.log(`⚠️ [HUNTERS] Mensagem do painel salva não pôde ser localizada no canal.`);
-          db.painelMensagemId = null;
-          salvarBanco(true);
-        }
-      } else {
-        console.log(`⚠️ [HUNTERS] Canal do painel salvo não pôde ser localizado.`);
-        db.painelCanalId = null;
-        db.painelMensagemId = null;
-        salvarBanco(true);
-      }
-    } catch (e) {
-      console.error(`❌ Erro ao localizar painel no ready:`, e.message);
-    }
-  }
+  recalcularEstoqueDividido();
+  salvarBanco();
 
-  if (!ultimoPainelMensagem) {
-    console.log(`🔍 [HUNTERS] Buscando canais elegíveis para o painel de forma autônoma...`);
-    let canalCandidato = null;
-    for (const guild of client.guilds.cache.values()) {
-      const channels = await guild.channels.fetch().catch(() => null);
-      if (!channels) continue;
-      
-      canalCandidato = channels.find(c => c.isTextBased() && (
-        c.name === 'painel' || 
-        c.name === 'painel-hunters' || 
-        c.name === 'hunters-painel' || 
-        c.name === 'erp' || 
-        c.name === 'gerenciamento'
-      ));
-      if (canalCandidato) break;
-    }
-    
-    if (canalCandidato) {
-      console.log(`🎯 [HUNTERS] Canal automático encontrado para painel: #${canalCandidato.name}`);
-      await criarPainel(canalCandidato);
-    } else {
-      console.log(`⚠️ [HUNTERS] Nenhum canal de painel padrão encontrado. Use !painel para criá-lo.`);
-    }
-  }
+  console.log(`🤖 [HUNTERS] Bot conectado como ${client.user.tag}!`);
 
-  atualizarStatusPresenca();
-  setInterval(atualizarStatusPresenca, 10000);
+  client.user.setPresence({
+    activities: [{ name: 'Hunters ERP • Sorte aos Fortes ⚔️', type: ActivityType.Playing }],
+    status: 'online'
+  });
 });
 
-// =========================================================================
-// 💬 EVENTO DE MENSAGEM (COMANDOS DE PREFIXO)
-// =========================================================================
-
+// LISTENER DE COMANDOS DE MENSAGEM (PREFIXO)
 client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.guild) return;
-  if (!message.content.startsWith(PREFIX)) return;
+  if (message.author.bot || !message.content.startsWith(db.config.PREFIX)) return;
 
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const args = message.content.slice(db.config.PREFIX.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
-  // COMANDO: AJUDA / PAINEL
-  if (command === 'ajuda' || command === 'help' || command === 'painel') {
-    return enviarPainelCentral(message.channel, message.author);
-  }
-
-  // COMANDO: AVISO META
+  // COMANDO: !avisometa (DISPARAR AVISO OFICIAL DE META)
   if (command === 'avisometa' || command === 'geraraviso' || command === 'aviso') {
-    if (!message.member.permissions.has('Administrator') && !temPermissaoEstoque(message.member)) {
-      return message.reply('❌ **Acesso Negado!** Apenas administradores do clã ou membros autorizados com acesso ao estoque podem disparar este aviso.');
+    if (!message.member.permissions.has('Administrator')) {
+      return message.reply('❌ **Acesso Negado!** Apenas administradores do clã podem disparar este aviso oficial.');
     }
 
-    const canalAvisosId = '1515125864033943712';
-    const cargoNotificarId = '1515125826780135485';
+    const canalAvisosId = db.config.CANAL_AVISOS_ID || '1515125864033943712';
+    const cargoNotificarId = db.config.CARGO_NOTIFICAR_ID || '1515125826780135485';
 
     let canalAvisos = client.channels.cache.get(canalAvisosId);
     if (!canalAvisos) {
       try {
         canalAvisos = await client.channels.fetch(canalAvisosId);
       } catch (e) {
-        return message.reply(`❌ **Erro:** Não consegui localizar o canal de avisos com o ID \`${canalAvisosId}\`.`);
+        return message.reply(`❌ **Erro:** Não consegui localizar o canal de avisos com o ID \`${canalAvisosId}\`. Verifique as permissões de leitura/escrita do bot.`);
       }
     }
 
@@ -689,9 +295,9 @@ client.on('messageCreate', async (message) => {
         `⏱️ **PRAZO DE TOLERÂNCIA DE 3 DIAS:**\n` +
         `Atenção: quem **NÃO ENTRAR** ou não preencher seus farmes no painel dentro do período de **3 dias** para a entrega da meta será **SUMARIAMENTE RETIRADO DO PAINEL**!\n\n` +
         `🎯 **COMO PREENCHER A META:**\n` +
-        `Você deve registrar seus farmes clicando no botão **Registrar Meta** do nosso painel no canal oficial:\n` +
-        `👉 **Clique aqui para ir ao Canal do Painel:** <#1523844178151473193>\n` +
-        `*(Membros que não preencherem estarão sujeitos à remoção das permissões de kits e gerenciamento)*\n\n` +
+        `Você deve registrar seus farmes clicando no botão **Registrar Farme** do nosso painel no canal oficial:\n` +
+        `👉 **Clique aqui para ir ao Canal do Painel:** <#${db.config.CANAL_PAINEL_ID || '1523844178151473193'}>\n` +
+        `*(Membros que não preencherem estarão sujeitos à remoção das permissões de kits)*\n\n` +
         `Não perca o prazo e garanta o seu kit semanal regulamentar de armamentos! Foco total na meta! ⚔️`)
       .setFooter({ text: 'Hunters ERP • Administração Hunters' })
       .setTimestamp();
@@ -701,832 +307,450 @@ client.on('messageCreate', async (message) => {
         content: `🚨 **ATENÇÃO** <@&${cargoNotificarId}>! 🚨\n**AVISO IMPORTANTÍSSIMO SOBRE A META DE AÇO DOS KITS!**`,
         embeds: [embedAviso]
       });
-      return message.reply(`✅ **Aviso enviado com sucesso!** A mensagem com as diretrizes e marcação foi enviada no canal de avisos <#${canalAvisosId}>.`);
+      return message.reply(`✅ **Aviso enviado com sucesso!** A mensagem foi publicada em <#${canalAvisosId}>.`);
     } catch (err) {
       console.error('Erro ao enviar mensagem de aviso de meta:', err);
-      return message.reply(`❌ **Erro ao enviar aviso:** \`${err.message}\`. Certifique-se de que o bot possui permissão de enviar mensagens e embeds no canal <#${canalAvisosId}>.`);
+      return message.reply(`❌ **Erro ao enviar aviso:** \`${err.message}\`. Certifique-se de que o bot possui permissão no canal.`);
     }
   }
 
-  // COMANDO: KIT (SISTEMA DE CALCULO)
-  if (command === 'kit') {
-    const aco = args[0]?.toLowerCase();
-
-    if (!aco) {
-      return message.reply(`⚠️ **Uso do Comando Kit:**\n\`${PREFIX}kit calcular\` - Calcula capacidade de kits\n\`${PREFIX}kit estoque\` - Detalha o estoque de kits`);
-    }
-
-    if (aco === 'calcular') {
-      const kits = calcularKitsDisponiveis();
-      const custoReal = db.config.kitMeta?.custo ?? 3260;
-      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
-
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('🎁 KIT DA META HUNTERS — CÁLCULO')
-            .setColor('#a855f7')
-            .addFields(
-              { name: '🛠️ Custo por Kit', value: `**${formatarNumero(custoReal)} Aços**`, inline: true },
-              { name: '📦 Kits disponíveis', value: `**${kits} kits**`, inline: true },
-              { name: '⛓️ Aço reservado (Baú)', value: `**${formatarNumero(acoKits)} kg**`, inline: true }
-            )
-            .setFooter({ text: 'Hunters ERP • Kit da Meta' })
-            .setTimestamp()
-        ]
-      });
-    }
-
-    if (aco === 'estoque') {
-      const kits = calcularKitsDisponiveis();
-      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
-
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('📦 ESTOQUE KIT META')
-            .setColor('#9333ea')
-            .addFields(
-              { name: '⛓️ Aço Kits', value: `**${formatarNumero(acoKits)} kg**`, inline: true },
-              { name: '🎁 Kits prontos', value: `**${kits} un**`, inline: true }
-            )
-            .setFooter({ text: 'Hunters ERP • Estoque de Kits' })
-            .setTimestamp()
-        ]
-      });
-    }
-  }
-
-  // COMANDO: ESTOQUE
-  if (command === 'estoque') {
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * (pctKits / 100));
-    const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
-    const kitsProntos = calcularKitsDisponiveis();
-
-    const embedEstoque = new EmbedBuilder()
-      .setTitle('📦 ESTOQUE GERAL — HUNTERS')
-      .setColor('#9333ea')
-      .addFields(
-        { name: '⛓️ Total no Baú', value: `**${formatarNumero(db.estoque)} kg**`, inline: false },
-        { name: '🔫 Reservado p/ Vendas', value: `**${formatarNumero(acoVendas)} kg** (${pctSales}%)`, inline: true },
-        { name: '⚙️ Reservado p/ Kits', value: `**${formatarNumero(acoKits)} kg** (${pctKits}%)`, inline: true },
-        { name: '📦 Kits Prontos Disponíveis', value: `**${formatarNumero(kitsProntos)} un** (Custo: ${formatarNumero(db.config.kitMeta?.custo ?? 3260)}kg/kit da meta)`, inline: false }
-      );
-
-    let producaoStr = '';
-    Object.keys(ARMAS).forEach(key => {
-      const arma = ARMAS[key];
-      const maxFabricavel = Math.floor(acoVendas / arma.aco);
-      producaoStr += `${arma.icon} **${arma.nome}**: ${formatarNumero(maxFabricavel)} un *(Custo: ${formatarNumero(arma.aco)}kg de aço de vendas)*\n`;
-    });
-    embedEstoque.addFields({ name: '🛠️ Capacidade de Venda de Armas', value: producaoStr });
-
-    return message.reply({ embeds: [embedEstoque] });
-  }
-
-  // COMANDO: CAIXA
-  if (command === 'caixa' || command === 'cofre') {
-    const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
-    const embedCaixa = new EmbedBuilder()
-      .setTitle('💰 CAIXA COFRE HUNTERS')
-      .setColor('#10b981')
-      .addFields(
-        { name: '💵 Saldo em Caixa', value: `**${formatarMoeda(db.caixa)}**` },
-        { name: '📈 Total Faturado', value: `**${formatarMoeda(totalVendido)}**`, inline: true },
-        { name: '📜 Vendas Registradas', value: `**${db.vendas.length} transações**`, inline: true }
-      )
-      .setTimestamp();
-    return message.reply({ embeds: [embedCaixa] });
-  }
-
-  // COMANDO: VENDER
-  if (command === 'vender' || command === 'venda') {
-    const membro = message.mentions.members.first() || (args[0] ? await message.guild.members.fetch(args[0]).catch(() => null) : null);
-    const armaChave = args[1]?.toLowerCase();
-    const quantidade = parseInt(args[2]);
-    const desconto = parseInt(args[3]) || 0;
-
-    if (!membro || !armaChave || isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ **Formato incorreto!** Use:\n\`${PREFIX}vender <@membro|ID> <ak47|awp|m16|sawedoff|glock17> <quantidade> [desconto_porcentagem]\``);
-    }
-
-    const arma = ARMAS[armaChave];
-    if (!arma) {
-      return message.reply(`❌ **Arma inválida!** Opções: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\``);
-    }
-
-    const acoNecessario = arma.aco * quantidade;
-    const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * ((db.config.percentSteelForSales || 70) / 100));
-
-    if (acoVendas < acoNecessario) {
-      return message.reply(`❌ **Aço para Vendas Insuficiente!** É necessário **${formatarNumero(acoNecessario)} kg** de aço para fabricação. O baú possui **${formatarNumero(acoVendas)} kg** reservado para vendas (Aço total no baú: **${formatarNumero(db.estoque)} kg**).`);
-    }
-
-    // CORREÇÃO CRÍTICA: "quantity" substituída pela variável correta "quantidade"
-    const precoBase = arma.preco * quantidade;
-    const valorDesconto = precoBase * (desconto / 100);
-    const totalVenda = precoBase - valorDesconto;
-    const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
-    const lucroClas = totalVenda - comissaoVendedor;
-
-    db.estoqueVendas = acoVendas - acoNecessario;
-    db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
-    db.estoque = db.estoqueKits + db.estoqueVendas;
-    db.caixa += lucroClas;
-
-    const novaVenda = {
-      id: `V-${Date.now().toString().slice(-6)}`,
-      timestamp: new Date().toISOString(),
-      userId: membro.id,
-      userName: membro.user.username,
-      arma: arma.nome,
-      quantidade,
-      total: totalVenda,
-      desconto,
-      comissao: comissaoVendedor,
-      acoConsumido: acoNecessario
-    };
-
-    const acoAntes = obterAcoTotalUsuario(membro.id);
-
-    db.vendas.push(novaVenda);
-    salvarBanco();
-
-    const acoDepois = obterAcoTotalUsuario(membro.id);
-    checarMetaAtingida(membro.id, acoAntes, acoDepois, message.channel);
-
-    const embedSucesso = new EmbedBuilder()
-      .setTitle('🎯 VENDA REGISTRADA COM SUCESSO')
-      .setColor('#10b981')
-      .addFields(
-        { name: '👤 Vendedor', value: `${membro}`, inline: true },
-        { name: '🔫 Armamento', value: `**${quantidade}x ${arma.nome}**`, inline: true },
-        { name: '📉 Desconto', value: `**${desconto}%**`, inline: true },
-        { name: '💰 Total Pago', value: `**${formatarMoeda(totalVenda)}**` },
-        { name: '💸 Split Vendedor (Comissão)', value: `**${formatarMoeda(comissaoVendedor)}** (${db.config.splitPercent}%)`, inline: true },
-        { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}** (${100 - db.config.splitPercent}%)`, inline: true },
-        { name: '⛓️ Aço de Vendas Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
-      )
-      .setFooter({ text: `ID da Transação: ${novaVenda.id}` })
-      .setTimestamp();
-
-    return message.reply({ embeds: [embedSucesso] });
-  }
-
-  // COMANDO: RANKING
-  if (command === 'ranking') {
-    if (db.vendas.length === 0) {
-      return message.reply('🏆 **Ranking Vazio!** Nenhuma venda foi registrada neste ciclo.');
-    }
-
-    const rankingUser = {};
-    db.vendas.forEach(v => {
-      if (!rankingUser[v.userName]) rankingUser[v.userName] = { total: 0, count: 0 };
-      rankingUser[v.userName].total += v.total;
-      rankingUser[v.userName].count += v.quantidade;
-    });
-
-    const rankingOrdenado = Object.keys(rankingUser).map(userName => ({
-      userName,
-      total: rankingUser[userName].total,
-      count: rankingUser[userName].count
-    })).sort((a, b) => b.total - a.total);
-
-    let rankingStr = '';
-    rankingOrdenado.slice(0, 10).forEach((user, index) => {
-      const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`;
-      rankingStr += `${medal} **${user.userName}** — Faturamento: \`${formatarMoeda(user.total)}\` *(Qtd: ${user.count} armas)*\n`;
-    });
-
-    const embedRanking = new EmbedBuilder()
-      .setTitle('🏆 RANKING DE ELITE — HUNTERS')
-      .setColor('#f59e0b')
-      .setDescription(rankingStr)
-      .setTimestamp();
-
-    return message.reply({ embeds: [embedRanking] });
-  }
-
-  // COMANDO: METAS
-  if (command === 'metas' || command === 'meta') {
-    const embedMetas = obterMetasEmbed();
-    return message.reply({ embeds: [embedMetas] });
-  }
-
-  // COMANDO: HISTORICO / LOGS
-  if (command === 'historico' || command === 'logs') {
-    if (db.vendas.length === 0) {
-      return message.reply('📑 Nenhuma transação registrada até o momento.');
-    }
-
-    const ultimasVendas = db.vendas.slice(-10).reverse();
-    let listStr = '';
-    ultimasVendas.forEach(v => {
-      listStr += `• **${v.id}** | **${v.userName}** vendeu **${v.quantidade}x ${v.arma}** por \`${formatarMoeda(v.total)}\` *(Desconto: ${v.desconto}% | Aço: -${formatarNumero(v.acoConsumido)}kg)*\n`;
-    });
-
-    const embedLogs = new EmbedBuilder()
-      .setTitle('📑 ÚLTIMAS TRANSAÇÕES — ERP HUNTERS')
-      .setColor('#6b7280')
-      .setDescription(listStr)
-      .setTimestamp();
-
-    return message.reply({ embeds: [embedLogs] });
-  }
-
-  // COMANDO: FARME / REGISTRAR_META
-  if (command === 'farme' || command === 'farm' || command === 'registrar' || command === 'registrar_meta') {
-    const quantidade = parseInt(args[0]);
-    if (isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ **Uso correto:** \`${PREFIX}farme <quantidade_em_kg>\`\nExemplo: \`${PREFIX}farme 2500\``);
-    }
-
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const addKits = Math.floor(quantidade * (pctKits / 100));
-    const addSales = quantidade - addKits;
-
-    db.estoqueKits = (db.estoqueKits || 0) + addKits;
-    db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-    db.estoque += quantidade;
-
-    if (!db.farmes) db.farmes = [];
-    const novoFarme = {
-      id: `F-${Date.now().toString().slice(-6)}`,
-      timestamp: new Date().toISOString(),
-      userId: message.author.id,
-      userName: message.author.username,
-      quantidade
-    };
-    const acoAntes = obterAcoTotalUsuario(message.author.id);
-
-    db.farmes.push(novoFarme);
-    salvarBanco();
-
-    const acoDepois = obterAcoTotalUsuario(message.author.id);
-    checarMetaAtingida(message.author.id, acoAntes, acoDepois, message.channel);
-
-    await message.reply(`🚜 **Farme registrado com sucesso!** Foram adicionados **+${formatarNumero(quantidade)} kg** ao baú.`);
-
-    const canalLogId = '1525698045537161226';
-    let canalLog = client.channels.cache.get(canalLogId);
-    if (!canalLog) {
+  // COMANDO: !painel (GERAR O PAINEL DE CONTROLE CENTRAL)
+  if (command === 'painel' || command === 'central' || command === 'ajuda' || command === 'help') {
+    // Apagar painel antigo do canal anterior se houver
+    if (db.painelCanalId && db.painelMensagemId) {
       try {
-        canalLog = await client.channels.fetch(canalLogId);
+        const canalAntigo = client.channels.cache.get(db.painelCanalId) 
+          || await client.channels.fetch(db.painelCanalId).catch(() => null);
+        if (canalAntigo) {
+          const msgAntiga = await canalAntigo.messages.fetch(db.painelMensagemId).catch(() => null);
+          if (msgAntiga) {
+            await msgAntiga.delete().catch(() => null);
+          }
+        }
       } catch (e) {
-        console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
+        console.log('Não foi possível deletar o painel anterior:', e.message);
       }
     }
 
-    const embedLog = new EmbedBuilder()
-      .setTitle('🚜 REGISTRO DE FARME DIÁRIO')
-      .setColor('#10b981')
-      .setDescription(`👤 **Membro:** ${message.author} (${message.author.username})\n📦 **Quantidade:** **${formatarNumero(quantidade)} kg** de aço\n📅 **Data:** <t:${Math.floor(Date.now() / 1000)}:f>`)
-      .setTimestamp();
+    // Criar novo painel no canal atual
+    try {
+      const payload = obterPainelPayload();
+      const novaMsg = await message.channel.send(payload);
+      
+      db.painelCanalId = message.channel.id;
+      db.painelMensagemId = novaMsg.id;
+      db.config.CANAL_PAINEL_ID = message.channel.id;
+      salvarBanco();
 
-    if (canalLog) {
-      await canalLog.send({ embeds: [embedLog] }).catch(err => {
-        console.error('Erro ao enviar mensagem para o canal de log:', err);
-      });
+      const confMsg = await message.reply('✅ **Painel Central Operacional criado e ativo neste canal!** Todos os botões estão ativos para a facção.');
+      setTimeout(() => confMsg.delete().catch(() => null), 6000);
+      await message.delete().catch(() => null);
+    } catch (err) {
+      console.error('Erro ao criar painel central:', err);
+      return message.reply(`❌ **Erro ao gerar painel:** ${err.message}`);
     }
-
-    const embedPublico = new EmbedBuilder()
-      .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
-      .setColor('#a855f7')
-      .setDescription(`👤 O membro ${message.author} registrou **${formatarNumero(quantidade)} kg** de aço no baú!`)
-      .setTimestamp();
-
-    return message.channel.send({ embeds: [embedPublico] });
   }
 
-  // COMANDO ADMIN: ADDACO
-  if (command === 'addaco') {
-    if (!temPermissaoEstoque(message.member)) {
-      return message.reply(`❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem adicionar aço.`);
-    }
-
-    const quantidade = parseInt(args[0]);
-    if (isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ Use o formato: \`${PREFIX}addaco <kg>\``);
-    }
-
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const addKits = Math.floor(quantidade * (pctKits / 100));
-    const addSales = quantidade - addKits;
-
-    db.estoqueKits = (db.estoqueKits || 0) + addKits;
-    db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-    db.estoque += quantidade;
-    salvarBanco();
-
-    return message.reply(`⛓️ **Estoque Abastecido!** Foram adicionados **+${formatarNumero(quantidade)} kg** ao baú. Distribuído proporcionalmente:\n📥 **+${formatarNumero(addSales)} kg** para Vendas\n📥 **+${formatarNumero(addKits)} kg** para Kits.`);
-  }
-
-  // COMANDO ADMIN: SUBACO
-  if (command === 'subaco' || command === 'sub') {
-    if (!temPermissaoEstoque(message.member)) {
-      return message.reply(`❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem retirar aço.`);
-    }
-
-    const quantidade = parseInt(args[0]);
-    if (isNaN(quantidade) || quantidade <= 0) {
-      return message.reply(`❌ Use o formato: \`${PREFIX}subaco <kg>\``);
-    }
-
-    if (db.estoque < quantidade) {
-      return message.reply(`❌ **Quantidade insuficiente!** O baú possui apenas **${formatarNumero(db.estoque)} kg**.`);
-    }
-
-    const pctKits = db.config.percentSteelForKits || 30;
-    const pctSales = db.config.percentSteelForSales || 70;
-    const subKits = Math.floor(quantidade * (pctKits / 100));
-    const subSales = quantidade - subKits;
-
-    db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
-    db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSales);
-    db.estoque = db.estoqueKits + db.estoqueVendas;
-    salvarBanco();
-
-    return message.reply(`⛓️ **Retirada Efetuada!** Removidos **-${formatarNumero(quantidade)} kg** proporcionalmente do baú (Vendas: -${formatarNumero(subSales)}kg, Kits: -${formatarNumero(subKits)}kg).`);
-  }
-
-  // COMANDO ADMIN: LIMPAR / RESET
-  if (command === 'limpar' || command === 'reset' || command === 'resetar') {
+  // COMANDO: !resetciclo (ZERAR HISTÓRICOS DE ACUMULADOS PARA NOVA META)
+  if (command === 'resetciclo' || command === 'limparhistorico') {
     if (!message.member.permissions.has('Administrator')) {
-      return message.reply('❌ Apenas administradores do servidor podem resetar os logs de vendas.');
+      return message.reply('❌ **Acesso Negado!** Apenas administradores do clã podem resetar o ciclo atual.');
     }
 
-    db.vendas = [];
     db.farmes = [];
-    db.estoque = 69000;
-    db.estoqueKits = 20700;
-    db.estoqueVendas = 48300;
-    db.caixa = 280000;
+    db.vendas = [];
+    db.estoque = 150000;
+    db.caixa = 15000000;
+    recalcularEstoqueDividido();
     salvarBanco();
 
-    return message.reply('🧹 **Ciclo Resetado!** Todos os logs de vendas e farmes foram apagados e os valores retornaram ao padrão de fábrica.');
+    await atualizarPainel(message.guild);
+    return message.reply('✅ **Sucesso!** O ciclo semanal foi encerrado. Todos os históricos de vendas e farmes de aço foram zerados para a nova meta.');
+  }
+
+  // COMANDO: !status (STATUS RAPIDO)
+  if (command === 'status' || command === 'logistica') {
+    const kitsProntos = Math.floor(db.estoqueKits / db.config.CUSTO_KIT_KG);
+    const embedStatus = new EmbedBuilder()
+      .setTitle('📊 ESTADO GERAL DE RECURSOS - HUNTERS')
+      .setColor('#a855f7')
+      .addFields(
+        { name: '⛓️ Estoque Total', value: `${formatarNumero(db.estoque)} kg`, inline: true },
+        { name: '🎁 Reservado p/ Kits', value: `${formatarNumero(db.estoqueKits)} kg`, inline: true },
+        { name: '🔫 Reservado p/ Vendas', value: `${formatarNumero(db.estoqueVendas)} kg`, inline: true },
+        { name: '📦 Kits Prontos', value: `${formatarNumero(kitsProntos)} un.`, inline: true },
+        { name: '🏦 Caixa Líquido', value: `${formatarMoeda(db.caixa)}`, inline: true }
+      )
+      .setTimestamp();
+    return message.reply({ embeds: [embedStatus] });
   }
 });
 
-// =========================================================================
-// 🖱️ MANIPULADOR DE INTERAÇÕES (BOTÕES E REQUISIÇÕES)
-// =========================================================================
-
+// LISTENER DE INTERAÇÕES (CLIQUES EM BOTÕES E SUBMISSÕES DE FORMULÁRIOS)
 client.on('interactionCreate', async (interaction) => {
+  const guild = interaction.guild;
+  if (!guild) return;
+
+  // 1. MANIPULAR CLIQUES DOS BOTÕES DO PAINEL
   if (interaction.isButton()) {
     const customId = interaction.customId;
 
-    if (customId === 'painel_estoque') {
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * (pctKits / 100));
-      const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
-      const kitsProntos = calcularKitsDisponiveis();
-
+    // BOTÃO: CONSULTAR ESTOQUE (Resposta rápida)
+    if (customId === 'btn_consultar_estoque') {
+      const kitsProntos = Math.floor(db.estoqueKits / db.config.CUSTO_KIT_KG);
       const embedEstoque = new EmbedBuilder()
-        .setTitle('⛓️ CONSULTA RÁPIDA: ESTOQUE')
-        .setColor('#9333ea')
-        .addFields(
-          { name: 'Aço Total no Baú', value: `\`${formatarNumero(db.estoque)} kg\``, inline: false },
-          { name: 'Aço p/ Vendas', value: `\`${formatarNumero(acoVendas)} kg\` (${pctSales}%)`, inline: true },
-          { name: 'Aço p/ Kits', value: `\`${formatarNumero(acoKits)} kg\` (${pctKits}%)`, inline: true },
-          { name: 'Kits Prontos Disponíveis', value: `\`${formatarNumero(kitsProntos)} un\``, inline: false }
-        );
-
+        .setTitle('📦 CONSULTA DE ESTOQUE DETALHADA')
+        .setColor('#5865f2')
+        .setDescription(
+          `Aqui está o detalhamento de materiais da facção:\n\n` +
+          `⛓️ **Aço no Baú:** \`${formatarNumero(db.estoque)} kg\`\n` +
+          `├─ 🎁 **Aço p/ Kits (${db.config.PERCENT_STEEL_FOR_KITS}%):** \`${formatarNumero(db.estoqueKits)} kg\`\n` +
+          `└─ 🔫 **Aço p/ Vendas (${db.config.PERCENT_STEEL_FOR_SALES}%):** \`${formatarNumero(db.estoqueVendas)} kg\`\n\n` +
+          `📦 **Kits Prontos p/ Retirada:** \`${kitsProntos} unidades\` *(Custo de ${formatarNumero(db.config.CUSTO_KIT_KG)} kg de aço cada)*`
+        )
+        .setTimestamp();
       return interaction.reply({ embeds: [embedEstoque], ephemeral: true });
     }
 
-    if (customId === 'painel_kits') {
-      const kits = calcularKitsDisponiveis();
-      const custoReal = db.config.kitMeta?.custo ?? 3260;
+    // BOTÃO: CONSULTAR CAIXA (Resposta rápida)
+    if (customId === 'btn_consultar_caixa') {
+      const totalFaturado = db.vendas.reduce((acc, v) => acc + v.total, 0);
+      const totalComissao = db.vendas.reduce((acc, v) => acc + v.comissao, 0);
 
-      return interaction.reply({
-        ephemeral: true,
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('🎁 KIT DA META HUNTERS')
-            .setColor('#a855f7')
-            .setDescription(`🏆 **Meta Semanal:** 8.000 Aços\n\n🎁 **Composição do Kit:**\n🔫 **AK-47** x1\n🔫 **Glock 17** x1\n📦 **Box 5.56** x3\n📦 **Box Pistola** x2\n\n🛠️ **Custo Real:** \`${formatarNumero(custoReal)} Aços\`\n\n📦 **Disponíveis:** \`${kits} kits\` prontos para entrega no estoque do baú.`)
-        ]
-      });
-    }
-
-    if (customId === 'painel_caixa') {
-      const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
       const embedCaixa = new EmbedBuilder()
-        .setTitle('💰 CONSULTA RÁPIDA: COFRE')
-        .setColor('#10b981')
-        .addFields(
-          { name: 'Saldo em Caixa', value: `**${formatarMoeda(db.caixa)}**` },
-          { name: 'Faturamento de Vendas', value: `\`${formatarMoeda(totalVendido)}\`` }
-        );
-
+        .setTitle('🏦 STATUS DO COFRE E CAIXA')
+        .setColor('#5865f2')
+        .setDescription(
+          `Abaixo está o balanço financeiro atualizado:\n\n` +
+          `💰 **Recurso Líquido no Cofre:** **${formatarMoeda(db.caixa)}**\n` +
+          `📈 **Bruto Comercializado:** \`${formatarMoeda(totalFaturado)}\`\n` +
+          `💸 **Total pago em Comissões:** \`${formatarMoeda(totalComissao)}\`\n\n` +
+          `💼 *Divisão de Vendas: ${100 - db.config.SPLIT_CLAN_PERCENT}% Clã | ${db.config.SPLIT_CLAN_PERCENT}% Comissão do Vendedor*`
+        )
+        .setTimestamp();
       return interaction.reply({ embeds: [embedCaixa], ephemeral: true });
     }
 
-    if (customId === 'painel_ranking') {
-      if (db.vendas.length === 0) {
-        return interaction.reply({ content: '🏆 Nenhum dado de vendas registrado para gerar o ranking ainda.', ephemeral: true });
+    // BOTÃO: DETALHES DO KIT
+    if (customId === 'btn_ver_detalhes_kit') {
+      const embedDetalhes = new EmbedBuilder()
+        .setTitle('🎁 COMPOSIÇÃO DO KIT DE META SEMANAL')
+        .setColor('#a855f7')
+        .setDescription(
+          `Para receber este kit completo, o membro deve atingir o farme acumulado de **${formatarNumero(db.config.META_ACO_KG)} kg de aço** na semana.\n\n` +
+          `⚖️ **Custo Unitário de Aço:** \`${formatarNumero(db.config.CUSTO_KIT_KG)} kg\`\n\n` +
+          `📦 **Componentes inclusos no Kit:**\n` +
+          `• **1x Fuzil AK-47** *(Equivalente a ${formatarNumero(KIT_META_ITENS.ak47.aco)} kg)*\n` +
+          `• **5x Coletes Táticos** *(Equivalente a ${formatarNumero(KIT_META_ITENS.coletes.aco)} kg)*\n` +
+          `• **250x Munições de Fuzil** *(Equivalente a ${formatarNumero(KIT_META_ITENS.municao.aco)} kg)*\n\n` +
+          `*Registre seus farmes no painel! Foco total na meta.*`
+        )
+        .setTimestamp();
+      return interaction.reply({ embeds: [embedDetalhes], ephemeral: true });
+    }
+
+    // BOTÃO: VER RANKING DE VENDEDORES
+    if (customId === 'btn_ver_ranking') {
+      if (!db.vendas || db.vendas.length === 0) {
+        return interaction.reply({ content: '❌ Nenhuma venda foi registrada até o momento neste ciclo.', ephemeral: true });
       }
 
-      const rankingUser = {};
+      const rankingMap = {};
       db.vendas.forEach(v => {
-        if (!rankingUser[v.userName]) rankingUser[v.userName] = { total: 0 };
-        rankingUser[v.userName].total += v.total;
+        if (!rankingMap[v.userName]) rankingMap[v.userName] = { total: 0, count: 0 };
+        rankingMap[v.userName].total += v.total;
+        rankingMap[v.userName].count += v.quantidade;
       });
 
-      const rankingOrdenado = Object.keys(rankingUser).map(userName => ({
-        userName,
-        total: rankingUser[userName].total
-      })).sort((a, b) => b.total - a.total);
+      const sorted = Object.entries(rankingMap)
+        .map(([name, stat]) => ({ name, ...stat }))
+        .sort((a, b) => b.total - a.total);
 
-      let rankingStr = '';
-      rankingOrdenado.slice(0, 5).forEach((user, index) => {
-        const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`;
-        rankingStr += `${medal} **${user.userName}**: ${formatarMoeda(user.total)}\n`;
+      let txt = '';
+      sorted.forEach((user, idx) => {
+        const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`;
+        txt += `${medal} **${user.name}** - Faturou: **${formatarMoeda(user.total)}** (${user.count} armas)\n`;
       });
 
       const embedRanking = new EmbedBuilder()
-        .setTitle('🏆 TOP 5 VENDEDORES')
+        .setTitle('🏆 RANKING DE VENDEDORES - HUNTERS')
         .setColor('#f59e0b')
-        .setDescription(rankingStr);
-
+        .setDescription(txt)
+        .setTimestamp();
       return interaction.reply({ embeds: [embedRanking], ephemeral: true });
     }
 
-    if (customId === 'painel_metas') {
-      const embedMetas = obterMetasEmbed();
-      return interaction.reply({ embeds: [embedMetas], ephemeral: true });
-    }
-
-    if (customId === 'painel_historico') {
-      if (db.vendas.length === 0) {
-        return interaction.reply({ content: '📑 Nenhuma transação recente encontrada.', ephemeral: true });
-      }
-
-      const ultimasVendas = db.vendas.slice(-6).reverse();
-      let listStr = '';
-      ultimasVendas.forEach(v => {
-        listStr += `• **${v.id}** | **${v.userName}** vendeu **${v.quantidade}x ${v.arma}** por \`${formatarMoeda(v.total)}\`\n`;
-      });
-
-      const embedLogs = new EmbedBuilder()
-        .setTitle('📑 HISTÓRICO RECENTE')
-        .setColor('#6b7280')
-        .setDescription(listStr);
-
-      return interaction.reply({ embeds: [embedLogs], ephemeral: true });
-    }
-
-    if (customId === 'painel_addaco') {
-      if (!temPermissaoEstoque(interaction.member)) {
-        return interaction.reply({ 
-          content: `❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem adicionar aço ao baú.`, 
-          ephemeral: true 
-        });
-      }
-
+    // BOTÃO COM MODAL: REGISTRAR FARME
+    if (customId === 'btn_registrar_farme') {
       const modal = new ModalBuilder()
-        .setCustomId('modal_addaco')
-        .setTitle('➕ ADICIONAR AÇO');
+        .setCustomId('md_registrar_farme')
+        .setTitle('🎯 Registrar Farme de Aço');
 
-      const inputAco = new TextInputBuilder()
-        .setCustomId('aco_quantidade')
-        .setLabel('Quantidade de Aço (em kg)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 5000')
-        .setRequired(true);
-
-      const row = new ActionRowBuilder().addComponents(inputAco);
-      modal.addComponents(row);
-
-      return interaction.showModal(modal);
-    }
-
-    if (customId === 'painel_subaco') {
-      if (!temPermissaoEstoque(interaction.member)) {
-        return interaction.reply({ 
-          content: `❌ **Acesso Negado!** Apenas membros com o cargo <@&${CARGO_ESTOQUE_ID}> ou administradores podem retirar aço do baú.`, 
-          ephemeral: true 
-        });
-      }
-
-      const modal = new ModalBuilder()
-        .setCustomId('modal_subaco')
-        .setTitle('➖ RETIRAR AÇO');
-
-      const inputAco = new TextInputBuilder()
-        .setCustomId('aco_quantidade')
-        .setLabel('Quantidade de Aço (em kg)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 5000')
-        .setRequired(true);
-
-      const row = new ActionRowBuilder().addComponents(inputAco);
-      modal.addComponents(row);
-
-      return interaction.showModal(modal);
-    }
-
-    if (customId === 'painel_registrar_meta') {
-      const modal = new ModalBuilder()
-        .setCustomId('modal_registrar_meta')
-        .setTitle('🎯 REGISTRAR FARME DIÁRIO');
-
-      const inputAco = new TextInputBuilder()
-        .setCustomId('farme_quantidade')
-        .setLabel('Quantidade de Aço Farmado (em kg)')
-        .setStyle(TextInputStyle.Short)
+      const qtyInput = new TextInputBuilder()
+        .setCustomId('farme_qty')
+        .setLabel('Quantidade de Aço extraída (em kg):')
         .setPlaceholder('Ex: 2500')
+        .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
-      const row = new ActionRowBuilder().addComponents(inputAco);
-      modal.addComponents(row);
-
+      modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
       return interaction.showModal(modal);
     }
 
-    if (customId === 'painel_venda') {
+    // BOTÃO COM MODAL: REGISTRAR VENDA
+    if (customId === 'btn_registrar_venda') {
       const modal = new ModalBuilder()
-        .setCustomId('modal_vender')
-        .setTitle('💰 REGISTRAR VENDA');
+        .setCustomId('md_registrar_venda')
+        .setTitle('💰 Registrar Venda de Armas');
 
-      const inputVendedor = new TextInputBuilder()
-        .setCustomId('vendedor_id')
-        .setLabel('Vendedor (Mencione ou insira o ID)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: @Membro ou 123456789012345')
-        .setRequired(true);
-
-      const inputArma = new TextInputBuilder()
-        .setCustomId('arma_chave')
-        .setLabel('Arma (ak47, awp, m16, sawedoff, glock17)')
-        .setStyle(TextInputStyle.Short)
+      const weaponInput = new TextInputBuilder()
+        .setCustomId('venda_weapon')
+        .setLabel('Cód da Arma (ak47, m4a1, g36, smg, glock):')
         .setPlaceholder('Ex: ak47')
-        .setRequired(true);
-
-      const inputQtd = new TextInputBuilder()
-        .setCustomId('quantidade')
-        .setLabel('Quantidade')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Ex: 1')
         .setRequired(true);
 
-      const inputDesc = new TextInputBuilder()
-        .setCustomId('desconto')
-        .setLabel('Desconto % (Ex: 0 para nenhum ou 30 para clã)')
+      const qtyInput = new TextInputBuilder()
+        .setCustomId('venda_qty')
+        .setLabel('Quantidade vendida:')
+        .setPlaceholder('Ex: 1')
+        .setStyle(TextInputStyle.Short)
+        .setValue('1')
+        .setRequired(true);
+
+      const discountInput = new TextInputBuilder()
+        .setCustomId('venda_discount')
+        .setLabel('Desconto concedido (em % de 0 a 100):')
+        .setPlaceholder('Ex: 0')
         .setStyle(TextInputStyle.Short)
         .setValue('0')
         .setRequired(false);
 
       modal.addComponents(
-        new ActionRowBuilder().addComponents(inputVendedor),
-        new ActionRowBuilder().addComponents(inputArma),
-        new ActionRowBuilder().addComponents(inputQtd),
-        new ActionRowBuilder().addComponents(inputDesc)
+        new ActionRowBuilder().addComponents(weaponInput),
+        new ActionRowBuilder().addComponents(qtyInput),
+        new ActionRowBuilder().addComponents(discountInput)
       );
+      return interaction.showModal(modal);
+    }
 
+    // BOTÃO COM MODAL: ADICIONAR AÇO (ADMINISTRATIVO)
+    if (customId === 'btn_add_aco') {
+      const modal = new ModalBuilder()
+        .setCustomId('md_add_aco')
+        .setTitle('➕ Adicionar Aço ao Baú');
+
+      const qtyInput = new TextInputBuilder()
+        .setCustomId('add_qty')
+        .setLabel('Quantidade para adicionar (kg):')
+        .setPlaceholder('Ex: 5000')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
+      return interaction.showModal(modal);
+    }
+
+    // BOTÃO COM MODAL: RETIRAR AÇO (ADMINISTRATIVO)
+    if (customId === 'btn_retirar_aco') {
+      const modal = new ModalBuilder()
+        .setCustomId('md_sub_aco')
+        .setTitle('➖ Retirar Aço do Baú');
+
+      const qtyInput = new TextInputBuilder()
+        .setCustomId('sub_qty')
+        .setLabel('Quantidade para retirar (kg):')
+        .setPlaceholder('Ex: 4000')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(qtyInput));
       return interaction.showModal(modal);
     }
   }
 
-  if (interaction.isModalSubmit()) {
+  // 2. TRATAMENTO DE ENVIO DOS FORMULÁRIOS (MODAIS)
+  if (interaction.type === InteractionType.ModalSubmit) {
     const customId = interaction.customId;
+    const member = interaction.member;
+    const user = interaction.user;
 
-    if (customId === 'modal_addaco') {
-      const quantidade = parseInt(interaction.fields.getTextInputValue('aco_quantidade'));
+    // ENVIO MODAL: REGISTRAR FARME
+    if (customId === 'md_registrar_farme') {
+      const qtyStr = interaction.fields.getTextInputValue('farme_qty');
+      const qty = parseInt(qtyStr);
 
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!** Digite apenas números inteiros maiores que zero.', ephemeral: true });
+      if (isNaN(qty) || qty <= 0) {
+        return interaction.reply({ content: '❌ **Erro:** Quantidade de aço informada inválida. Digite um número positivo.', ephemeral: true });
       }
 
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const addKits = Math.floor(quantidade * (pctKits / 100));
-      const addSales = quantidade - addKits;
+      const totalAnterior = obterAcoTotalMembro(user.id);
 
-      db.estoqueKits = (db.estoqueKits || 0) + addKits;
-      db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-      db.estoque += quantidade;
-      salvarBanco();
+      db.estoque += qty;
+      recalcularEstoqueDividido();
 
-      await interaction.reply({ content: `⛓️ **Sucesso!** Adicionado **+${formatarNumero(quantidade)} kg** ao baú.`, ephemeral: true });
-      
-      const embedPublico = new EmbedBuilder()
-        .setTitle('⛓️ ENTRADA DE MATERIAL NO ESTOQUE')
-        .setColor('#248046')
-        .addFields(
-          { name: '👤 Responsável', value: `${interaction.user}`, inline: true },
-          { name: '📦 Quantidade Adicionada', value: `**+${formatarNumero(quantidade)} kg**`, inline: true },
-          { name: '📊 Divisão do Baú', value: `Vendas: **+${formatarNumero(addSales)} kg** | Kits: **+${formatarNumero(addKits)} kg**`, inline: false },
-          { name: '📊 Estoque Geral Atual', value: `**${formatarNumero(db.estoque)} kg**`, inline: true }
-        )
-        .setTimestamp();
-
-      return interaction.channel.send({ embeds: [embedPublico] });
-    }
-
-    if (customId === 'modal_registrar_meta') {
-      const quantidade = parseInt(interaction.fields.getTextInputValue('farme_quantidade'));
-
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!** Digite apenas números inteiros maiores que zero.', ephemeral: true });
-      }
-
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const addKits = Math.floor(quantidade * (pctKits / 100));
-      const addSales = quantidade - addKits;
-
-      db.estoqueKits = (db.estoqueKits || 0) + addKits;
-      db.estoqueVendas = (db.estoqueVendas || 0) + addSales;
-      db.estoque += quantidade;
-
-      if (!db.farmes) db.farmes = [];
       const novoFarme = {
-        id: `F-${Date.now().toString().slice(-6)}`,
-        timestamp: new Date().toISOString(),
-        userId: interaction.user.id,
-        userName: interaction.user.username,
-        quantidade
+        id: `farme-${Date.now()}`,
+        userId: user.id,
+        userName: member.displayName || user.username,
+        quantidade: qty,
+        data: new Date().toISOString()
       };
-      const acoAntes = obterAcoTotalUsuario(interaction.user.id);
-
       db.farmes.push(novoFarme);
       salvarBanco();
 
-      const acoDepois = obterAcoTotalUsuario(interaction.user.id);
-      checarMetaAtingida(interaction.user.id, acoAntes, acoDepois, interaction.channel);
+      const totalNovo = obterAcoTotalMembro(user.id);
+      await verificarMetaAtingida(user.id, member.displayName || user.username, totalAnterior, totalNovo, guild);
 
-      await interaction.reply({ content: `🚜 **Farme registrado com sucesso!** Adicionados **+${formatarNumero(quantidade)} kg** ao baú.`, ephemeral: true });
+      await interaction.reply({
+        content: `✅ **Farme Registrado!** Você registrou **${formatarNumero(qty)} kg** de aço com sucesso.\nAcumulado semanal: **${formatarNumero(totalNovo)} kg** / ${formatarNumero(db.config.META_ACO_KG)} kg de aço.`,
+        ephemeral: true
+      });
 
-      const canalLogId = '1525698045537161226';
-      let canalLog = client.channels.cache.get(canalLogId);
-      if (!canalLog) {
-        try {
-          canalLog = await client.channels.fetch(canalLogId);
-        } catch (e) {
-          console.log(`Erro ao buscar canal de log ${canalLogId}:`, e.message);
-        }
-      }
+      await atualizarPainel(guild);
+      return;
+    }
 
-      const embedLog = new EmbedBuilder()
-        .setTitle('🚜 REGISTRO DE FARME DIÁRIO')
-        .setColor('#10b981')
-        .setDescription(`👤 **Membro:** ${interaction.user} (${interaction.user.username})\n📦 **Quantidade:** **${formatarNumero(quantidade)} kg** de aço\n📅 **Data:** <t:${Math.floor(Date.now() / 1000)}:f>`)
-        .setTimestamp();
+    // ENVIO MODAL: REGISTRAR VENDA
+    if (customId === 'md_registrar_venda') {
+      const weaponKey = interaction.fields.getTextInputValue('venda_weapon').trim().toLowerCase();
+      const qtyStr = interaction.fields.getTextInputValue('venda_qty');
+      const discountStr = interaction.fields.getTextInputValue('venda_discount') || '0';
 
-      if (canalLog) {
-        await canalLog.send({ embeds: [embedLog] }).catch(err => {
-          console.error('Erro ao enviar mensagem para o canal de log:', err);
+      const qty = parseInt(qtyStr);
+      const discount = parseInt(discountStr);
+
+      const arma = ARMAS[weaponKey];
+      if (!arma) {
+        return interaction.reply({
+          content: '❌ **Erro:** Arma inválida! Opções: `ak47`, `m4a1`, `g36`, `smg`, `glock`, `five_seven`, `tec9`, `hk45`.',
+          ephemeral: true
         });
       }
 
-      const embedPublico = new EmbedBuilder()
-        .setTitle('🚜 NOVO FARME DIÁRIO REGISTRADO')
-        .setColor('#a855f7')
-        .setDescription(`👤 O membro ${interaction.user} registrou **${formatarNumero(quantidade)} kg** de aço no baú!`)
-        .setTimestamp();
-
-      return interaction.channel.send({ embeds: [embedPublico] });
-    }
-
-    if (customId === 'modal_subaco') {
-      const quantidade = parseInt(interaction.fields.getTextInputValue('aco_quantidade'));
-
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!** Digite apenas números inteiros maiores que zero.', ephemeral: true });
+      if (isNaN(qty) || qty <= 0) {
+        return interaction.reply({ content: '❌ **Erro:** Quantidade de armas inválida.', ephemeral: true });
       }
 
-      if (db.estoque < quantidade) {
-        return interaction.reply({ content: `❌ **Estoque insuficiente!** O cofre de aço possui apenas **${formatarNumero(db.estoque)} kg**.`, ephemeral: true });
+      if (isNaN(discount) || discount < 0 || discount > 100) {
+        return interaction.reply({ content: '❌ **Erro:** Desconto deve ser uma porcentagem entre 0% e 100%.', ephemeral: true });
       }
 
-      const pctKits = db.config.percentSteelForKits || 30;
-      const pctSales = db.config.percentSteelForSales || 70;
-      const subKits = Math.floor(quantidade * (pctKits / 100));
-      const subSalesVal = quantidade - subKits;
+      const totalAcoConsumido = arma.aco * qty;
 
-      db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
-      db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSalesVal);
-      db.estoque = db.estoqueKits + db.estoqueVendas;
-      salvarBanco();
-
-      await interaction.reply({ content: `⛓️ **Sucesso!** Retirado **-${formatarNumero(quantidade)} kg** proporcionalmente.`, ephemeral: true });
-      
-      const embedPublico = new EmbedBuilder()
-        .setTitle('⛓️ RETIRADA DE MATERIAL NO ESTOQUE')
-        .setColor('#da373c')
-        .addFields(
-          { name: '👤 Responsável', value: `${interaction.user}`, inline: true },
-          { name: '📦 Quantidade Retirada', value: `**-${formatarNumero(quantidade)} kg**`, inline: true },
-          { name: '📊 Divisão do Baú', value: `Vendas: **-${formatarNumero(subSalesVal)} kg** | Kits: **-${formatarNumero(subKits)} kg**`, inline: false },
-          { name: '📊 Estoque Geral Atual', value: `**${formatarNumero(db.estoque)} kg**`, inline: true }
-        )
-        .setTimestamp();
-
-      return interaction.channel.send({ embeds: [embedPublico] });
-    }
-
-    if (customId === 'modal_vender') {
-      const vendedorInput = interaction.fields.getTextInputValue('vendedor_id');
-      const armaChave = interaction.fields.getTextInputValue('arma_chave').toLowerCase().trim();
-      const quantidade = parseInt(interaction.fields.getTextInputValue('quantidade'));
-      const desconto = parseInt(interaction.fields.getTextInputValue('desconto')) || 0;
-
-      let vendedorMembro = null;
-      const cleanId = vendedorInput.replace(/[<@!>]/g, '');
-      try {
-        vendedorMembro = await interaction.guild.members.fetch(cleanId);
-      } catch (e) {
-        return interaction.reply({ content: '❌ **Vendedor não encontrado!** Verifique se o ID ou menção estão corretos.', ephemeral: true });
+      if (db.estoqueVendas < totalAcoConsumido) {
+        return interaction.reply({
+          content: `❌ **Erro de Estoque!** Não há aço de vendas suficiente no baú. Necessário: **${formatarNumero(totalAcoConsumido)} kg** | Disponível para vendas: **${formatarNumero(db.estoqueVendas)} kg**.`,
+          ephemeral: true
+        });
       }
 
-      if (!vendedorMembro) {
-        return interaction.reply({ content: '❌ **Vendedor inválido!**', ephemeral: true });
-      }
+      const precoBruto = arma.preco * qty;
+      const valorDesconto = (precoBruto * discount) / 100;
+      const precoLiquido = precoBruto - valorDesconto;
 
-      const arma = ARMAS[armaChave];
-      if (!arma) {
-        return interaction.reply({ content: '❌ **Arma inválida!** Opções: \`ak47\`, \`awp\`, \`m16\`, \`sawedoff\`, \`glock17\`.', ephemeral: true });
-      }
+      const pctMembro = db.config.SPLIT_CLAN_PERCENT || 50;
+      const comissaoMembro = (precoLiquido * pctMembro) / 100;
+      const liquidoClan = precoLiquido - comissaoMembro;
 
-      if (isNaN(quantidade) || quantidade <= 0) {
-        return interaction.reply({ content: '❌ **Quantidade inválida!**', ephemeral: true });
-      }
-
-      const acoNecessario = arma.aco * quantidade;
-      const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * ((db.config.percentSteelForSales || 70) / 100));
-
-      if (acoVendas < acoNecessario) {
-        return interaction.reply({ content: `❌ **Aço Insuficiente!** Necessário **${formatarNumero(acoNecessario)} kg**. O baú de vendas tem **${formatarNumero(acoVendas)} kg**.`, ephemeral: true });
-      }
-
-      const precoBase = arma.preco * quantidade;
-      const valorDesconto = precoBase * (desconto / 100);
-      const totalVenda = precoBase - valorDesconto;
-      const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
-      const lucroClas = totalVenda - comissaoVendedor;
-
-      db.estoqueVendas = acoVendas - acoNecessario;
-      db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
-      db.estoque = db.estoqueKits + db.estoqueVendas;
-      db.caixa += lucroClas;
+      db.estoque -= totalAcoConsumido;
+      db.caixa += liquidoClan;
+      recalcularEstoqueDividido();
 
       const novaVenda = {
-        id: `V-${Date.now().toString().slice(-6)}`,
-        timestamp: new Date().toISOString(),
-        userId: vendedorMembro.id,
-        userName: vendedorMembro.user.username,
-        arma: arma.nome,
-        quantidade,
-        total: totalVenda,
-        desconto,
-        comissao: comissaoVendedor,
-        acoConsumido: acoNecessario
+        id: `venda-${Date.now()}`,
+        userId: user.id,
+        userName: member.displayName || user.username,
+        armaKey: weaponKey,
+        armaNome: arma.nome,
+        quantidade: qty,
+        precoUnitario: arma.preco,
+        total: precoLiquido,
+        comissao: comissaoMembro,
+        acoConsumido: totalAcoConsumido,
+        data: new Date().toISOString()
       };
-
-      const acoAntes = obterAcoTotalUsuario(vendedorMembro.id);
-
       db.vendas.push(novaVenda);
       salvarBanco();
 
-      const acoDepois = obterAcoTotalUsuario(vendedorMembro.id);
-      checarMetaAtingida(vendedorMembro.id, acoAntes, acoDepois, interaction.channel);
+      await interaction.reply({
+        content: `✅ **Venda Registrada com Sucesso!**\n` +
+          `🔫 **Arma:** ${arma.nome} (x${qty})\n` +
+          `⛓️ **Aço de Vendas Consumido:** \`${formatarNumero(totalAcoConsumido)} kg\`\n` +
+          `💵 **Valor Total Líquido:** \`${formatarMoeda(precoLiquido)}\` (Desconto: ${discount}%)\n` +
+          `🏦 **Cofre do Clã:** +\`${formatarMoeda(liquidoClan)}\`\n` +
+          `💸 **Sua Comissão:** +\`${formatarMoeda(comissaoMembro)}\``,
+        ephemeral: true
+      });
 
-      await interaction.reply({ content: `🎯 Venda **${novaVenda.id}** lançada com sucesso no ERP!`, ephemeral: true });
+      // Publicar recibo da venda no canal do painel para auditoria
+      const canalPainel = guild.channels.cache.get(db.painelCanalId);
+      if (canalPainel) {
+        const embedVendaLog = new EmbedBuilder()
+          .setTitle('💰 NOVA VENDA REGISTRADA • LOGS')
+          .setColor('#10b981')
+          .setDescription(
+            `👤 **Vendedor:** <@${user.id}> (${member.displayName || user.username})\n` +
+            `🔫 **Modelo:** ${arma.nome} (x${qty})\n` +
+            `⛓️ **Consumo de Material:** \`${formatarNumero(totalAcoConsumido)} kg\` de aço faturados\n\n` +
+            `💵 **Balanço Financeiro:**\n` +
+            `├─ **Faturamento Líquido:** \`${formatarMoeda(precoLiquido)}\`\n` +
+            `├─ **Cofre Hunters:** \`${formatarMoeda(liquidoClan)}\`\n` +
+            `└─ **Comissão paga:** \`${formatarMoeda(comissaoMembro)}\` (Split: ${pctMembro}%)`
+          )
+          .setFooter({ text: 'Hunters ERP • Logs Comerciais' })
+          .setTimestamp();
+        
+        await canalPainel.send({ embeds: [embedVendaLog] }).catch(() => null);
+      }
 
-      const embedSucesso = new EmbedBuilder()
-        .setTitle('🎯 VENDA REGISTRADA COM SUCESSO')
-        .setColor('#10b981')
-        .addFields(
-          { name: '👤 Vendedor', value: `${vendedorMembro}`, inline: true },
-          { name: '🔫 Armamento', value: `**${quantidade}x ${arma.nome}**`, inline: true },
-          { name: '📉 Desconto', value: `**${desconto}%**`, inline: true },
-          { name: '💰 Total Pago', value: `**${formatarMoeda(totalVenda)}**` },
-          { name: '💸 Split Vendedor', value: `**${formatarMoeda(comissaoVendedor)}** (Comissão de ${db.config.splitPercent}%)`, inline: true },
-          { name: '🏦 Cofre HUNTERS', value: `**+${formatarMoeda(lucroClas)}**`, inline: true },
-          { name: '⛓️ Aço Consumido', value: `**-${formatarNumero(acoNecessario)} kg**`, inline: true }
-        )
-        .setFooter({ text: `ID: ${novaVenda.id} • Lançado via Painel Interativo` })
-        .setTimestamp();
+      await atualizarPainel(guild);
+      return;
+    }
 
-      return interaction.channel.send({ embeds: [embedSucesso] });
+    // ENVIO MODAL: ADICIONAR AÇO (ADMINISTRATIVO)
+    if (customId === 'md_add_aco') {
+      const qtyStr = interaction.fields.getTextInputValue('add_qty');
+      const qty = parseInt(qtyStr);
+
+      if (isNaN(qty) || qty <= 0) {
+        return interaction.reply({ content: '❌ **Erro:** Digite um número positivo válido.', ephemeral: true });
+      }
+
+      db.estoque += qty;
+      recalcularEstoqueDividido();
+      salvarBanco();
+
+      await interaction.reply({ content: `✅ **Sucesso!** Adicionado **${formatarNumero(qty)} kg** de aço ao baú geral da facção.`, ephemeral: true });
+      await atualizarPainel(guild);
+      return;
+    }
+
+    // ENVIO MODAL: RETIRAR AÇO (ADMINISTRATIVO)
+    if (customId === 'md_sub_aco') {
+      const qtyStr = interaction.fields.getTextInputValue('sub_qty');
+      const qty = parseInt(qtyStr);
+
+      if (isNaN(qty) || qty <= 0) {
+        return interaction.reply({ content: '❌ **Erro:** Digite um número positivo válido.', ephemeral: true });
+      }
+
+      if (db.estoque < qty) {
+        return interaction.reply({ content: `❌ **Erro:** Saldo de aço insuficiente no baú. Estoque atual: **${formatarNumero(db.estoque)} kg**.`, ephemeral: true });
+      }
+
+      db.estoque -= qty;
+      recalcularEstoqueDividido();
+      salvarBanco();
+
+      await interaction.reply({ content: `✅ **Sucesso!** Retirado **${formatarNumero(qty)} kg** de aço do baú geral da facção.`, ephemeral: true });
+      await atualizarPainel(guild);
+      return;
     }
   }
 });
 
-// =========================================================================
-// 🚀 INICIALIZAÇÃO DO BOT
-// =========================================================================
-
-if (TOKEN) {
-  client.login(TOKEN).catch(err => {
-    console.error('❌ Erro de login no Discord. Verifique o TOKEN:', err.message);
-  });
-} else {
-  console.error('❌ ERRO CRÍTICO: Variável DISCORD_TOKEN ou TOKEN não encontrada no seu ambiente!');
-}
+// LOGIN DO CLIENT
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+  console.error("❌ Erro fatal ao iniciar o cliente Discord. Verifique se o DISCORD_TOKEN informado no arquivo .env está correto:", err.message);
+});
