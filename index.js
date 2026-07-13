@@ -28,7 +28,7 @@ const client = new Client({
 });
 
 const PREFIX = process.env.PREFIX || '!';
-const TOKEN = process.env.DISCORD_TOKEN;
+const TOKEN = process.env.TOKEN;
 const DB_FILE = path.join(__dirname, 'hunters_database.json');
 
 // Estado Inicial do Banco de Dados
