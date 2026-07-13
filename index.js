@@ -4,6 +4,7 @@
  * =========================================================================
  *
  * Versão Ultra Moderna e Sincronizada com Interações por Botões e Modais do Discord.
+ * Adaptada para o Sistema de KIT DA META (8.000 Aços de Meta, 3.260 Aços por Kit).
  *
  * ⚙️ CONFIGURAÇÕES DE HOSPEDAGEM:
  * 1. Requer Node.js v16.9.0 ou superior.
@@ -57,12 +58,23 @@ let db = {
   estoqueVendas: 48300,   // Aço reservado para Vendas (70% padrão)
   caixa: 280000,          // R$ 280.000 padrão
   vendas: [],
+  kitsEntregues: [],      // Histórico de Kits entregues aos membros
   config: {
     splitPercent: 30,           // % de comissão do vendedor (membro)
     steelClanPercent: 10,       // % de retenção de aço pro clã
-    kitCost: 3000,              // kg de aço por kit pronto
+    kitCost: 3260,              // Custo em kg do Kit de Meta
     percentSteelForKits: 30,    // % de aço destinado a Kits
-    percentSteelForSales: 70    // % de aço destinado a Vendas de Armas
+    percentSteelForSales: 70,   // % de aço destinado a Vendas de Armas
+    kitMeta: {
+      meta: 8000,               // Meta necessária em aços
+      custo: 3260,              // Custo real do kit da meta (3.260 Aços)
+      itens: {
+        ak47: { nome: "AK-47", quantidade: 1, aco: 2700 },
+        glock17: { nome: "Glock 17", quantidade: 1, aco: 120 },
+        box556: { nome: "Box 5.56", quantidade: 3, aco: 360 },
+        boxPistola: { nome: "Box Pistola", quantidade: 2, aco: 80 }
+      }
+    }
   }
 };
 
@@ -83,12 +95,29 @@ function carregarBanco() {
       db = JSON.parse(dados);
       console.log('📦 [HUNTERS] Banco de dados carregado com sucesso!');
       
-      // Sincronizar e injetar configurações de divisão de aço caso ausentes
+      // Sincronizar e injetar configurações e novas chaves caso ausentes
       if (!db.config) db.config = {};
       if (db.config.percentSteelForKits === undefined) db.config.percentSteelForKits = 30;
       if (db.config.percentSteelForSales === undefined) db.config.percentSteelForSales = 70;
       if (db.config.splitPercent === undefined) db.config.splitPercent = 30;
+      if (db.kitsEntregues === undefined) db.kitsEntregues = [];
       
+      if (db.config.kitMeta === undefined) {
+        db.config.kitMeta = {
+          meta: 8000,
+          custo: 3260,
+          itens: {
+            ak47: { nome: "AK-47", quantidade: 1, aco: 2700 },
+            glock17: { nome: "Glock 17", quantidade: 1, aco: 120 },
+            box556: { nome: "Box 5.56", quantidade: 3, aco: 360 },
+            boxPistola: { nome: "Box Pistola", quantidade: 2, aco: 80 }
+          }
+        };
+      }
+      
+      // Manter custo do kit sincronizado
+      db.config.kitCost = db.config.kitMeta.custo;
+
       if (db.estoqueKits === undefined || db.estoqueVendas === undefined) {
         db.estoqueKits = Math.floor(db.estoque * (db.config.percentSteelForKits / 100));
         db.estoqueVendas = db.estoque - db.estoqueKits;
@@ -125,6 +154,13 @@ const temPermissaoEstoque = (member) => {
   if (!member) return false;
   return member.roles.cache.has(CARGO_ESTOQUE_ID) || member.permissions.has('Administrator');
 };
+
+// Obter quantidade de Kits da Meta disponíveis no estoque reservado
+function calcularKitsDisponiveis() {
+  const custo = (db.config && db.config.kitMeta && db.config.kitMeta.custo) ? db.config.kitMeta.custo : 3260;
+  const estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
+  return Math.floor(estoqueKits / custo);
+}
 
 // Obter o Embed de Metas de Aço (8.000 kg semanal por pessoa)
 const obterMetasEmbed = () => {
@@ -177,7 +213,7 @@ client.once('ready', () => {
 const enviarPainelCentral = (channel, targetUser = null) => {
   const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
   const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
-  const kitsProntos = Math.floor(acoKits / db.config.kitCost);
+  const kitsProntos = calcularKitsDisponiveis();
   const totalVendido = db.vendas.reduce((acc, v) => acc + v.total, 0);
   const split = db.config.splitPercent;
 
@@ -189,8 +225,8 @@ const enviarPainelCentral = (channel, targetUser = null) => {
     .addFields(
       { name: '🛠️ Aço p/ Vendas', value: `**${formatarNumero(acoVendas)} kg** (${db.config.percentSteelForSales || 70}%)`, inline: true },
       { name: '⚙️ Aço p/ Kits', value: `**${formatarNumero(acoKits)} kg** (${db.config.percentSteelForKits || 30}%)`, inline: true },
-      { name: '🎁 Kits Prontos', value: `**${formatarNumero(kitsProntos)} Kits**`, inline: true },
-      { name: '💰 Caixa HUNTERS', value: `**${formatarMoeda(db.caixa)}**`, inline: true },
+      { name: '🎁 Kits Disponíveis', value: `**${formatarNumero(kitsProntos)} Kits**`, inline: true },
+      { name: '🏦 Caixa HUNTERS', value: `**${formatarMoeda(db.caixa)}**`, inline: true },
       { name: '🛒 Total Faturado', value: `**${formatarMoeda(totalVendido)}**`, inline: true },
       { name: '📊 Split de Lucros', value: `🏦 **${100 - split}% Clã** | 💵 **${split}% Membro**`, inline: true }
     )
@@ -202,6 +238,10 @@ const enviarPainelCentral = (channel, targetUser = null) => {
     new ButtonBuilder()
       .setCustomId('painel_estoque')
       .setLabel('📦 Consultar Estoque')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('painel_caixa')
+      .setLabel('🏦 Caixa')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('painel_addaco')
@@ -219,9 +259,9 @@ const enviarPainelCentral = (channel, targetUser = null) => {
       .setLabel('💰 Registrar Venda')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId('painel_caixa')
-      .setLabel('🏦 Caixa')
-      .setStyle(ButtonStyle.Primary),
+      .setCustomId('painel_kits')
+      .setLabel('🎁 Kits Meta')
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('painel_ranking')
       .setLabel('🏆 Ranking')
@@ -258,13 +298,128 @@ client.on('messageCreate', async (message) => {
     return enviarPainelCentral(message.channel, message.author);
   }
 
+  // COMANDO: KIT (NOVO SISTEMA)
+  if (command === 'kit') {
+    const acao = args[0]?.toLowerCase();
+
+    if (!acao) {
+      return message.reply(`⚠️ **Uso do Comando Kit:**\n\`${PREFIX}kit calcular\` - Calcula capacidade de kits\n\`${PREFIX}kit estoque\` - Detalha o estoque de kits\n\`${PREFIX}kit entregar <@membro>\` - Lança entrega de kit de meta\n\`${PREFIX}kit historico\` - Histórico de entregas`);
+    }
+
+    if (acao === 'calcular') {
+      const kits = calcularKitsDisponiveis();
+      const custoReal = db.config.kitMeta?.custo ?? 3260;
+      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
+
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🎁 KIT DA META HUNTERS — CÁLCULO')
+            .setColor('#a855f7')
+            .addFields(
+              { name: '🛠️ Custo por Kit', value: `**${formatarNumero(custoReal)} Aços**`, inline: true },
+              { name: '📦 Kits disponíveis', value: `**${kits} kits**`, inline: true },
+              { name: '⛓️ Aço reservado (Baú)', value: `**${formatarNumero(acoKits)} kg**`, inline: true }
+            )
+            .setFooter({ text: 'Hunters ERP • Kit da Meta' })
+            .setTimestamp()
+        ]
+      });
+    }
+
+    if (acao === 'estoque') {
+      const kits = calcularKitsDisponiveis();
+      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
+      const entreguesTotal = db.kitsEntregues ? db.kitsEntregues.length : 0;
+
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('📦 ESTOQUE KIT META')
+            .setColor('#9333ea')
+            .addFields(
+              { name: '⛓️ Aço Kits', value: `**${formatarNumero(acoKits)} kg**`, inline: true },
+              { name: '🎁 Kits prontos', value: `**${kits} un**`, inline: true },
+              { name: '📜 Kits Entregues', value: `**${entreguesTotal} un**`, inline: true }
+            )
+            .setFooter({ text: 'Hunters ERP • Estoque de Kits' })
+            .setTimestamp()
+        ]
+      });
+    }
+
+    if (acao === 'entregar') {
+      const membro = message.mentions.members.first();
+      if (!membro) {
+        return message.reply('❌ **Erro de Sintaxe!** Marque o membro que recebeu o kit. Exemplo: `!kit entregar @membro`');
+      }
+
+      const custoReal = db.config.kitMeta?.custo ?? 3260;
+      const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * 0.3);
+
+      if (acoKits < custoReal) {
+        return message.reply(`❌ **Aço Insuficiente!** Não existe aço de kits suficiente no baú para montar este kit. Necessário: **${formatarNumero(custoReal)} kg**, disponível: **${formatarNumero(acoKits)} kg**.`);
+      }
+
+      // Deduzir valores
+      db.estoqueKits = acoKits - custoReal;
+      db.estoqueVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : Math.floor(db.estoque * 0.7);
+      db.estoque = db.estoqueKits + db.estoqueVendas;
+
+      const novoKit = {
+        id: `K-${Date.now().toString().slice(-6)}`,
+        membro: membro.user.username,
+        userId: membro.id,
+        data: new Date().toISOString()
+      };
+
+      if (!db.kitsEntregues) db.kitsEntregues = [];
+      db.kitsEntregues.push(novoKit);
+      salvarBanco();
+
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🎁 KIT ENTREGUE COM SUCESSO')
+            .setColor('#10b981')
+            .setDescription(`👤 **Membro:** ${membro}\n\n**Itens inclusos no Kit:**\n🔫 **AK-47** x1 *(2.700 kg)*\n🔫 **Glock 17** x1 *(120 kg)*\n📦 **Box 5.56** x3 *(360 kg)*\n📦 **Box Pistola** x2 *(80 kg)*\n\n🛠️ **Consumo Total:** **${formatarNumero(custoReal)} kg** do Aço de Kits.\nSaldo atual: **${formatarNumero(db.estoqueKits)} kg** reservado para Kits.`)
+            .setFooter({ text: `Transação ID: ${novoKit.id}` })
+            .setTimestamp()
+        ]
+      });
+    }
+
+    if (acao === 'historico') {
+      const historico = db.kitsEntregues || [];
+      if (historico.length === 0) {
+        return message.reply('❌ Nenhuma entrega de kit registrada até o momento.');
+      }
+
+      let listStr = '';
+      historico.slice(-10).reverse().forEach(k => {
+        listStr += `• ID: **${k.id}** | **${k.membro}** recebeu em *${new Date(k.data).toLocaleDateString('pt-BR')} ${new Date(k.data).toLocaleTimeString('pt-BR').slice(0, 5)}*\n`;
+      });
+
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('📜 HISTÓRICO DE ENTREGA DE KITS')
+            .setColor('#6b7280')
+            .setDescription(listStr)
+            .setFooter({ text: 'Mostrando os últimos 10 kits entregues' })
+            .setTimestamp()
+        ]
+      });
+    }
+  }
+
   // COMANDO: ESTOQUE
   if (command === 'estoque') {
     const pctKits = db.config.percentSteelForKits || 30;
     const pctSales = db.config.percentSteelForSales || 70;
     const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * (pctKits / 100));
     const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
-    const kitsProntos = Math.floor(acoKits / db.config.kitCost);
+    const kitsProntos = calcularKitsDisponiveis();
 
     const embedEstoque = new EmbedBuilder()
       .setTitle('📦 ESTOQUE GERAL — HUNTERS')
@@ -273,7 +428,7 @@ client.on('messageCreate', async (message) => {
         { name: '⛓️ Total no Baú', value: `**${formatarNumero(db.estoque)} kg**`, inline: false },
         { name: '🔫 Reservado p/ Vendas', value: `**${formatarNumero(acoVendas)} kg** (${pctSales}%)`, inline: true },
         { name: '⚙️ Reservado p/ Kits', value: `**${formatarNumero(acoKits)} kg** (${pctKits}%)`, inline: true },
-        { name: '📦 Kits Prontos Disponíveis', value: `**${formatarNumero(kitsProntos)} un** (Custo: ${formatarNumero(db.config.kitCost)}kg/kit)`, inline: false }
+        { name: '📦 Kits Prontos Disponíveis', value: `**${formatarNumero(kitsProntos)} un** (Custo: ${formatarNumero(db.config.kitMeta?.custo ?? 3260)}kg/kit da meta)`, inline: false }
       );
 
     let producaoStr = '';
@@ -491,13 +646,14 @@ client.on('messageCreate', async (message) => {
     }
 
     db.vendas = [];
+    db.kitsEntregues = [];
     db.estoque = 69000;
     db.estoqueKits = 20700;
     db.estoqueVendas = 48300;
     db.caixa = 280000;
     salvarBanco();
 
-    return message.reply('🧹 **Ciclo Resetado!** Todos os logs de vendas foram apagados e os valores retornaram ao padrão de fábrica (69.000 kg aço total com divisão 30/70, R$ 280.000 caixa).');
+    return message.reply('🧹 **Ciclo Resetado!** Todos os logs de vendas e kits entregues foram apagados e os valores retornaram ao padrão de fábrica (69.000 kg aço total com divisão 30/70, R$ 280.000 caixa).');
   }
 });
 
@@ -512,7 +668,7 @@ client.on('interactionCreate', async (interaction) => {
       const pctSales = db.config.percentSteelForSales || 70;
       const acoKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * (pctKits / 100));
       const acoVendas = db.estoqueVendas !== undefined ? db.estoqueVendas : (db.estoque - acoKits);
-      const kitsProntos = Math.floor(acoKits / db.config.kitCost);
+      const kitsProntos = calcularKitsDisponiveis();
 
       const embedEstoque = new EmbedBuilder()
         .setTitle('⛓️ CONSULTA RÁPIDA: ESTOQUE')
@@ -525,6 +681,22 @@ client.on('interactionCreate', async (interaction) => {
         );
 
       return interaction.reply({ embeds: [embedEstoque], ephemeral: true });
+    }
+
+    // BOTÃO: KITS META
+    if (customId === 'painel_kits') {
+      const kits = calcularKitsDisponiveis();
+      const custoReal = db.config.kitMeta?.custo ?? 3260;
+
+      return interaction.reply({
+        ephemeral: true,
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🎁 KIT DA META HUNTERS')
+            .setColor('#a855f7')
+            .setDescription(`🏆 **Meta Semanal:** 8.000 Aços\n\n🎁 **Composição do Kit:**\n🔫 **AK-47** x1\n🔫 **Glock 17** x1\n📦 **Box 5.56** x3\n📦 **Box Pistola** x2\n\n🛠️ **Custo Real:** \`${formatarNumero(custoReal)} Aços\`\n\n📦 **Disponíveis:** \`${kits} kits\` prontos para entrega no estoque do baú.`)
+        ]
+      });
     }
 
     // BOTÃO: CAIXA
@@ -748,7 +920,7 @@ client.on('interactionCreate', async (interaction) => {
       const pctKits = db.config.percentSteelForKits || 30;
       const pctSales = db.config.percentSteelForSales || 70;
       const subKits = Math.floor(quantidade * (pctKits / 100));
-      const subSales = quantity - subKits;
+      const subSales = quantidade - subKits;
 
       db.estoqueKits = Math.max(0, (db.estoqueKits || 0) - subKits);
       db.estoqueVendas = Math.max(0, (db.estoqueVendas || 0) - subSales);
@@ -813,6 +985,7 @@ client.on('interactionCreate', async (interaction) => {
       const comissaoVendedor = totalVenda * (db.config.splitPercent / 100);
       const lucroClas = totalVenda - comissaoVendedor;
 
+      // ... (Código do bot continua acima)
       // Atualizar estoques no Baú (Deduzir apenas do estoque de vendas)
       db.estoqueVendas = acoVendas - acoNecessario;
       db.estoqueKits = db.estoqueKits !== undefined ? db.estoqueKits : Math.floor(db.estoque * ((db.config.percentSteelForKits || 30) / 100));
