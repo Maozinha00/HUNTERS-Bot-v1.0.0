@@ -1,15 +1,15 @@
 /**
- * 🐺 HUNTERS ERP - DISCORD BOT CENTRALIZADO (v4.1 - CORRIGIDO E SEGURO)
+ * 🐺 HUNTERS ERP - DISCORD BOT CENTRALIZADO (v4.2 - GERENTE & LOGS EM TEMPO REAL)
  * 
- * Script completo pronto para rodar.
+ * Script completo e totalmente otimizado pronto para rodar.
  * Desenvolvido para o Clã Hunters. Mantém o controle de estoque, 
  * finanças, comissões de vendas, metas semanais e avisos.
  * 
- * Requisitos:
+ * ⚙️ REQUISITOS:
  *   - Node.js v16.11.0 ou superior
  *   - Dependências: npm install discord.js dotenv
  * 
- * Configuração:
+ * ⚙️ CONFIGURAÇÃO:
  *   1. Crie um arquivo chamado `.env` na mesma pasta do script com o conteúdo:
  *      DISCORD_TOKEN=INSIRA_SEU_TOKEN_AQUI
  *   2. Configure os IDs dos canais e cargos abaixo para corresponderem ao seu servidor.
@@ -43,6 +43,8 @@ const CONFIG = {
   CANAL_AVISOS_ID: '1515125864033943712',
   CARGO_NOTIFICAR_ID: '1515125826780135485',
   CANAL_PAINEL_ID: '1523844178151473193',
+  CANAL_LOG_METAS_ID: '1525698045537161226', // Canal específico de logs de metas entregues
+  CARGO_GERENTE_ID: '1523277774436171796',   // ID do cargo de gerente autorizado
   META_ACO_KG: 8000,
   CUSTO_KIT_KG: 3260,
   SPLIT_CLAN_PERCENT: 30, // 30% Comissão Membro, 70% Clã
@@ -152,10 +154,11 @@ function obterAcoTotalMembro(userId) {
   return total;
 }
 
-// CHECAR SE MEMBRO BATEU A META E MANDAR AVISO
+// CHECAR SE MEMBRO BATEU A META E MANDAR AVISO & LOGS NO CANAL 1525698045537161226
 async function verificarMetaAtingida(userId, userName, totalAcoAnterior, totalAcoNovo, guild) {
   const meta = db.config.META_ACO_KG || 8000;
   if (totalAcoAnterior < meta && totalAcoNovo >= meta) {
+    // 📢 1. Anuncio Público no canal de avisos configurado
     const canalAvisos = guild.channels.cache.get(db.config.CANAL_AVISOS_ID) 
       || await guild.channels.fetch(db.config.CANAL_AVISOS_ID).catch(() => null);
 
@@ -170,6 +173,30 @@ async function verificarMetaAtingida(userId, userName, totalAcoAnterior, totalAc
       await canalAvisos.send({
         content: `🚨 **META BATIDA!** <@${userId}> superou o objetivo semanal de aço! Parabéns! ⚔️`,
         embeds: [embedMeta]
+      }).catch(() => null);
+    }
+
+    // 📜 2. Log de Meta Entregue e Aprovada no canal de log solicitado: 1525698045537161226
+    const canalLogId = db.config.CANAL_LOG_METAS_ID || '1525698045537161226';
+    const canalLog = guild.channels.cache.get(canalLogId)
+      || await guild.channels.fetch(canalLogId).catch(() => null);
+
+    if (canalLog) {
+      const embedLog = new EmbedBuilder()
+        .setTitle('🎯 REGISTRO: META ENTREGUE COM SUCESSO')
+        .setColor('#10b981')
+        .addFields(
+          { name: '👤 Membro', value: `<@${userId}> (${userName})`, inline: true },
+          { name: '⛓️ Quantidade Final', value: `**${formatarNumero(totalAcoNovo)} kg**`, inline: true },
+          { name: '🎯 Meta Exigida', value: `**${formatarNumero(meta)} kg**`, inline: true },
+          { name: '📅 Data do Registro', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+        )
+        .setFooter({ text: 'Hunters ERP • Logs de Entrega de Metas' })
+        .setTimestamp();
+
+      await canalLog.send({
+        content: `✅ **Meta Entregue!** O membro/recruta <@${userId}> bateu e entregou a meta de faturamento de aço.`,
+        embeds: [embedLog]
       }).catch(() => null);
     }
   }
@@ -271,7 +298,7 @@ function obterPainelPayload() {
   const rowConsultas = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('btn_arsenal').setLabel('Tabela de Preços').setStyle(ButtonStyle.Secondary).setEmoji('🔫'),
     new ButtonBuilder().setCustomId('btn_ranking').setLabel('Ranking de Farme').setStyle(ButtonStyle.Secondary).setEmoji('🏆'),
-    new ButtonBuilder().setCustomId('btn_admin').setLabel('Painel Admin').setStyle(ButtonStyle.Danger).setEmoji('⚙️')
+    new ButtonBuilder().setCustomId('btn_admin').setLabel('Painel Gerente').setStyle(ButtonStyle.Danger).setEmoji('⚙️') // Mudança para Painel Gerente
   );
 
   return {
@@ -333,7 +360,7 @@ client.once('ready', async () => {
 });
 
 // ==========================================
-// 1. EVENTO: RECEBIMENTO DE COMANDOS (NOVO!)
+// 1. EVENTO: RECEBIMENTO DE COMANDOS
 // ==========================================
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
@@ -346,9 +373,15 @@ client.on('messageCreate', async (message) => {
 
   // COMANDO: !AVISOS <MENSAGEM>
   if (command === 'avisos') {
-    // PROTEÇÃO: Apenas administradores do Discord podem executar
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return message.reply('❌ **Apenas administradores** do servidor podem utilizar o comando de avisos.')
+    // PROTEÇÃO: Apenas administradores do Discord ou com cargo de gerente podem enviar comunicados oficiais
+    const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
+    const temPermissao = message.member && (
+      message.member.permissions.has(PermissionFlagsBits.Administrator) || 
+      message.member.roles.cache.has(cargoGerenteId)
+    );
+
+    if (!temPermissao) {
+      return message.reply('❌ **Acesso Negado:** Apenas administradores ou membros com cargo de Gerente podem emitir avisos oficiais.')
         .then(msg => setTimeout(() => msg.delete().catch(() => null), 6000));
     }
 
@@ -385,9 +418,15 @@ client.on('messageCreate', async (message) => {
 
   // COMANDO: !PAINEL (Para gerar ou resetar o painel central)
   if (command === 'painel') {
-    // PROTEÇÃO: Apenas administradores podem acionar a geração do painel
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return message.reply('❌ **Erro de Permissão:** Apenas administradores podem gerar o painel central.')
+    // PROTEÇÃO: Apenas administradores ou cargo gerente podem gerar o painel
+    const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
+    const temPermissao = message.member && (
+      message.member.permissions.has(PermissionFlagsBits.Administrator) || 
+      message.member.roles.cache.has(cargoGerenteId)
+    );
+
+    if (!temPermissao) {
+      return message.reply('❌ **Erro de Permissão:** Apenas administradores ou Gerentes podem gerar o painel central.')
         .then(msg => setTimeout(() => msg.delete().catch(() => null), 6000));
     }
 
@@ -461,9 +500,8 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.showModal(modal);
     }
 
-    // BOTÃO: PERFIL / METAS
+    // BOTÃO: MEU PERFIL (RESPOSTA ULTRA RÁPIDA)
     if (interaction.customId === 'btn_perfil') {
-      await interaction.deferReply({ ephemeral: true });
       const totalFarmado = obterAcoTotalMembro(user.id);
       const meta = db.config.META_ACO_KG || 8000;
       const batida = totalFarmado >= meta;
@@ -481,32 +519,29 @@ client.on('interactionCreate', async (interaction) => {
         .setFooter({ text: 'Hunters ERP • Sorte aos Fortes' })
         .setTimestamp();
 
-      await interaction.editReply({ embeds: [embedPerfil] });
+      return interaction.reply({ embeds: [embedPerfil], ephemeral: true });
     }
 
-    // BOTÃO: TABELA DE PREÇOS
+    // BOTÃO: TABELA DE PREÇOS (RESPOSTA INSTANTÂNEA!)
     if (interaction.customId === 'btn_arsenal') {
-      await interaction.deferReply({ ephemeral: true });
-
       const embedArsenal = new EmbedBuilder()
         .setTitle('🔫 TABELA DE PREÇOS E REQUISITOS - ARSENAL')
         .setColor('#a855f7')
-        .setDescription('Use os IDs abaixo ao registrar vendas de equipamentos.');
+        .setDescription('Consulte os códigos e preços oficiais para registro do seu arsenal:');
 
       let listaItens = "";
       Object.keys(ARMAS).forEach((key) => {
         const item = ARMAS[key];
-        listaItens += `🔑 \`${key}\` | **${item.nome}**\n💵 Preço: \`${formatarMoeda(item.preco)}\` | ⛓️ Aço: \`${formatarNumero(item.aco)} kg\`\n\n`;
+        listaItens += `🔑 Code: \`${key}\` | **${item.nome}**\n💵 Preço: \`${formatarMoeda(item.preco)}\` | ⛓️ Aço Consumido: \`${formatarNumero(item.aco)} kg\`\n\n`;
       });
 
-      embedArsenal.addFields({ name: 'Itens Registrados', value: listaItens });
-      await interaction.editReply({ embeds: [embedArsenal] });
+      embedArsenal.addFields({ name: 'Lista de Equipamentos Cadastrados', value: listaItens });
+      
+      return interaction.reply({ embeds: [embedArsenal], ephemeral: true });
     }
 
-    // BOTÃO: RANKING DE FARME
+    // BOTÃO: RANKING DE FARME (RESPOSTA ULTRA RÁPIDA)
     if (interaction.customId === 'btn_ranking') {
-      await interaction.deferReply({ ephemeral: true });
-
       const totais = {};
       db.farmes.forEach(f => {
         totais[f.userId] = (totais[f.userId] || 0) + f.quantidade;
@@ -532,15 +567,20 @@ client.on('interactionCreate', async (interaction) => {
         embedRank.addFields({ name: 'Top 10 Colaboradores', value: txt });
       }
 
-      await interaction.editReply({ embeds: [embedRank] });
+      return interaction.reply({ embeds: [embedRank], ephemeral: true });
     }
 
-    // BOTÃO: PAINEL ADMIN (ESTREITAMENTE PRIVADO E RESTRITO!)
+    // BOTÃO: PAINEL GERENTE (RESTRITO AO ID DO CARGO E ADMINS)
     if (interaction.customId === 'btn_admin') {
-      // CORREÇÃO: Usando verificação de administrador explícita no membro para segurança total!
-      if (!interaction.member || !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
+      const temPermissao = interaction.member && (
+        interaction.member.permissions.has(PermissionFlagsBits.Administrator) || 
+        interaction.member.roles.cache.has(cargoGerenteId)
+      );
+
+      if (!temPermissao) {
         return interaction.reply({ 
-          content: '❌ **Acesso Negado:** Apenas administradores do servidor com cargo de gestão possuem permissão de configurar o painel.', 
+          content: `❌ **Acesso Negado:** Apenas administradores ou membros autorizados com o cargo de **Gerente** (<@&${cargoGerenteId}>) podem abrir as configurações do painel.`, 
           ephemeral: true 
         });
       }
@@ -668,13 +708,18 @@ client.on('interactionCreate', async (interaction) => {
       await atualizarPainel(guild);
     }
 
-    // MODAL: CONFIGURAÇÃO DE ADMIN
+    // MODAL: CONFIGURAÇÃO DE ADMIN/GERENTE
     if (interaction.customId === 'modal_admin') {
       await interaction.deferReply({ ephemeral: true });
       
-      // Verificação dupla de permissão por segurança!
-      if (!interaction.member || !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.editReply({ content: '❌ **Acesso Negado:** Sem privilégios de Administrador.' });
+      const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
+      const temPermissao = interaction.member && (
+        interaction.member.permissions.has(PermissionFlagsBits.Administrator) || 
+        interaction.member.roles.cache.has(cargoGerenteId)
+      );
+
+      if (!temPermissao) {
+        return interaction.editReply({ content: '❌ **Acesso Negado:** Sem privilégios de Gerente ou Administrador.' });
       }
 
       const novaMeta = parseInt(interaction.fields.getTextInputValue('cfg_meta'));
@@ -695,6 +740,10 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // INICIALIZANDO CONEXÃO COM O BOT TOKEN
-client.login(process.env.DISCORD_TOKEN).catch(err => {
-  console.error("❌ [HUNTERS] Falha crítica de conexão. Verifique o DISCORD_TOKEN no seu arquivo .env!", err.message);
-});
+if (process.env.DISCORD_TOKEN) {
+  client.login(process.env.DISCORD_TOKEN).catch(err => {
+    console.error("❌ [HUNTERS] Falha crítica de conexão. Verifique o DISCORD_TOKEN no seu arquivo .env!", err.message);
+  });
+} else {
+  console.error("❌ [HUNTERS] Erro: DISCORD_TOKEN não configurado nas variáveis de ambiente!");
+}
