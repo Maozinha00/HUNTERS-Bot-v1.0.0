@@ -1,5 +1,5 @@
 /**
- * 🐺 HUNTERS ERP - DISCORD BOT CENTRALIZADO (v4.2 - GERENTE & LOGS EM TEMPO REAL)
+ * 🐺 HUNTERS ERP - DISCORD BOT CENTRALIZADO (v4.2 - STANDALONE OFICIAL)
  * 
  * Script completo e totalmente otimizado pronto para rodar.
  * Desenvolvido para o Clã Hunters. Mantém o controle de estoque, 
@@ -52,8 +52,9 @@ const CONFIG = {
   PERCENT_STEEL_FOR_SALES: 70 // 70% para vendas
 };
 
-// TABELA DE ARMAS E REQUISITOS DE AÇO / PREÇOS
+// TABELA DE ARMAS, CAIXAS, MUNIÇÕES E REQUISITOS DE AÇO / PREÇOS
 const ARMAS = {
+  // --- ARMAS ---
   ak47: { nome: "AK-47", preco: 35000, aco: 2700 },
   awp: { nome: "AWP", preco: 65000, aco: 3000 },
   m16: { nome: "M16", preco: 35000, aco: 2700 },
@@ -65,11 +66,19 @@ const ARMAS = {
   carregador_est: { nome: "Carregador Estendido", preco: 3000, aco: 25 },
   grip: { nome: "Grip", preco: 3000, aco: 30 },
   lanterna: { nome: "Lanterna", preco: 2000, aco: 30 },
-  box_m_pistola: { nome: "Box Pistola", preco: 2000, aco: 40 },
-  box_m_sub: { nome: "Box Submetralhadora", preco: 3000, aco: 80 },
-  box_m_escopeta: { nome: "Box Escopeta", preco: 4000, aco: 100 },
-  box_m_556: { nome: "Box 5.56", preco: 5000, aco: 120 },
-  box_m_308: { nome: "Box .308", preco: 5000, aco: 200 }
+  
+  // --- CAIXAS DE MUNIÇÃO ---
+  box_m_pistola: { nome: "Box M. Pistola", preco: 2000, aco: 40 },
+  box_m_sub: { nome: "Box M. Sub", preco: 3000, aco: 80 },
+  box_m_escopeta: { nome: "Box M. Escopeta", preco: 4000, aco: 100 },
+  box_m_556: { nome: "Box M. 5.56", preco: 5000, aco: 120 },
+  box_m_308: { nome: "Box M. .308", preco: 5000, aco: 200 },
+
+  // --- MUNIÇÕES (CAIXA COM 10) ---
+  muni_pistola: { nome: "Munição Pistola (10x)", preco: 2000, aco: 10 },
+  muni_smg: { nome: "Munição SMG (10x)", preco: 3000, aco: 20 },
+  muni_escopeta: { nome: "Munição Escopeta (10x)", preco: 4000, aco: 25 },
+  muni_fuzil: { nome: "Munição Fuzil (10x)", preco: 5000, aco: 30 }
 };
 
 // INICIALIZAÇÃO DO BANCO DE DADOS LOCAL ( hunters-db.json )
@@ -83,6 +92,7 @@ let db = {
   caixa: 280000, // R$ inicial
   vendas: [],
   farmes: [],
+  retiradas: [],
   config: { ...CONFIG },
   painelCanalId: null,
   painelMensagemId: null
@@ -94,8 +104,10 @@ function carregarBanco() {
     if (fs.existsSync(DB_FILE)) {
       const data = fs.readFileSync(DB_FILE, 'utf-8');
       db = JSON.parse(data);
+      if (!db.retiradas) db.retiradas = [];
       console.log('💾 [HUNTERS] Banco de dados carregado com sucesso!');
     } else {
+      db.retiradas = [];
       salvarBanco();
       console.log('💾 [HUNTERS] Novo arquivo de banco de dados criado!');
     }
@@ -113,12 +125,12 @@ function salvarBanco() {
   }
 }
 
-// INICIALIZANDO CLIENT DO DISCORD COM INTENTS REQUISITADOS
+// INICIALIZANDO CLIENT DO DISCORD WITH INTENTS
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // <-- NECESSÁRIO para comandos prefixados
+    GatewayIntentBits.MessageContent, // <-- NECESSÁRIO para comandos prefixados como !painel
     GatewayIntentBits.GuildMembers
   ]
 });
@@ -154,7 +166,7 @@ function obterAcoTotalMembro(userId) {
   return total;
 }
 
-// CHECAR SE MEMBRO BATEU A META E MANDAR AVISO & LOGS NO CANAL 1525698045537161226
+// CHECAR SE MEMBRO BATEU A META E MANDAR AVISO & LOGS NO CANAL
 async function verificarMetaAtingida(userId, userName, totalAcoAnterior, totalAcoNovo, guild) {
   const meta = db.config.META_ACO_KG || 8000;
   if (totalAcoAnterior < meta && totalAcoNovo >= meta) {
@@ -176,7 +188,7 @@ async function verificarMetaAtingida(userId, userName, totalAcoAnterior, totalAc
       }).catch(() => null);
     }
 
-    // 📜 2. Log de Meta Entregue e Aprovada no canal de log solicitado: 1525698045537161226
+    // 📜 2. Log de Meta Entregue no canal de log solicitado
     const canalLogId = db.config.CANAL_LOG_METAS_ID || '1525698045537161226';
     const canalLog = guild.channels.cache.get(canalLogId)
       || await guild.channels.fetch(canalLogId).catch(() => null);
@@ -266,7 +278,7 @@ function obterPainelPayload() {
     formatBoxLine(formatDots('Comissões Membros (' + splitClan + '%)', formatarMoeda(comissaoTotal))),
     '┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛',
     '',
-    '┏━━━━━━━━━━━━━━━━━━━━━━ 🎯 META DA SEMANA ━━━━━━━━━━━━━━━━━━━━━━┓',
+    '┏━━━━━━━━━━━━━━━━━━━━══ 🎯 META DA SEMANA ━━━━━━━━━━━━━━━━━━━━━━┓',
     formatBoxLine(formatDots('Objetivo de Aço Semanal', formatarNumero(metaObjetivo) + ' kg')),
     formatBoxLine(formatDots('Aço Depositado no Ciclo', formatarNumero(totalDepositado) + ' kg')),
     formatBoxLine(formatDots('Membros que Bateram a Meta', metasBatidasCount + ' Colaboradores')),
@@ -285,20 +297,22 @@ function obterPainelPayload() {
   const embed = new EmbedBuilder()
     .setTitle('🐺 HUNTERS LOGÍSTICA & CONTROLE CENTRAL')
     .setColor('#a855f7')
-    .setDescription('```\n' + lines.join('\n') + '\n```')
+    .setDescription('\`\`\`\n' + lines.join('\n') + '\n\`\`\`')
     .setFooter({ text: 'Hunters ERP • Painel Operacional Central' })
     .setTimestamp();
 
+  // Botões principais incluídos no Painel central
   const rowAcoes = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('btn_farme').setLabel('Entregar Farme').setStyle(ButtonStyle.Success).setEmoji('📦'),
     new ButtonBuilder().setCustomId('btn_venda').setLabel('Registrar Venda').setStyle(ButtonStyle.Primary).setEmoji('💰'),
+    new ButtonBuilder().setCustomId('btn_retirar_aco').setLabel('Retirar Aço').setStyle(ButtonStyle.Danger).setEmoji('📤'),
     new ButtonBuilder().setCustomId('btn_perfil').setLabel('Meu Perfil').setStyle(ButtonStyle.Secondary).setEmoji('👤')
   );
 
   const rowConsultas = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('btn_arsenal').setLabel('Tabela de Preços').setStyle(ButtonStyle.Secondary).setEmoji('🔫'),
     new ButtonBuilder().setCustomId('btn_ranking').setLabel('Ranking de Farme').setStyle(ButtonStyle.Secondary).setEmoji('🏆'),
-    new ButtonBuilder().setCustomId('btn_admin').setLabel('Painel Gerente').setStyle(ButtonStyle.Danger).setEmoji('⚙️') // Mudança para Painel Gerente
+    new ButtonBuilder().setCustomId('btn_admin').setLabel('Painel Gerente').setStyle(ButtonStyle.Danger).setEmoji('⚙️')
   );
 
   return {
@@ -331,7 +345,7 @@ async function atualizarPainel(guild) {
           return;
         }
       } catch (e) {
-        // Ignora e cria nova
+        // Ignora e cria nova caso a mensagem antiga tenha sido excluída
       }
     }
 
@@ -346,7 +360,7 @@ async function atualizarPainel(guild) {
   }
 }
 
-// EVENTO: BOT PRONTO
+// EVENTO: BOT ONLINE
 client.once('ready', async () => {
   console.log(`🤖 [HUNTERS] Bot online como ${client.user.tag}!`);
   carregarBanco();
@@ -360,7 +374,7 @@ client.once('ready', async () => {
 });
 
 // ==========================================
-// 1. EVENTO: RECEBIMENTO DE COMANDOS
+// EVENTO: RECEBIMENTO DE COMANDOS CHAT
 // ==========================================
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
@@ -371,9 +385,8 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
-  // COMANDO: !AVISOS <MENSAGEM>
-  if (command === 'avisos') {
-    // PROTEÇÃO: Apenas administradores do Discord ou com cargo de gerente podem enviar comunicados oficiais
+  // COMANDO: !RETIRAR <QUANTIDADE> [MOTIVO] (Para Gerentes via Chat)
+  if (command === 'retirar') {
     const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
     const temPermissao = message.member && (
       message.member.permissions.has(PermissionFlagsBits.Administrator) || 
@@ -381,7 +394,61 @@ client.on('messageCreate', async (message) => {
     );
 
     if (!temPermissao) {
-      return message.reply('❌ **Acesso Negado:** Apenas administradores ou membros com cargo de Gerente podem emitir avisos oficiais.')
+      return message.reply("❌ **Acesso Negado:** Apenas gerentes ou administradores do clã podem retirar aço.");
+    }
+
+    const quantidade = parseInt(args[0]);
+    const motivo = args.slice(1).join(' ') || "Retirada rápida via comando de chat Discord";
+
+    if (isNaN(quantidade) || quantidade <= 0) {
+      return message.reply(`⚠️ **Uso correto:** \`${prefix}retirar <quantidade_kg> [motivo]\`\nExemplo: \`${prefix}retirar 5000 Fabricar Blindados\``);
+    }
+
+    if (db.estoque < quantidade) {
+      return message.reply(`❌ **Estoque insuficiente!** Disponível: ${formatarNumero(db.estoque)} kg. Solicitado: ${formatarNumero(quantidade)} kg.`);
+    }
+
+    // Processar retirada
+    db.estoque -= quantidade;
+    recalcularEstoqueDividido();
+
+    if (!db.retiradas) db.retiradas = [];
+    const novaRetirada = {
+      id: `ret_${Date.now()}`,
+      userId: message.author.id,
+      userName: message.author.username,
+      quantidade: quantidade,
+      motivo: motivo,
+      timestamp: new Date().toISOString()
+    };
+    db.retiradas.push(novaRetirada);
+    salvarBanco();
+
+    const embed = new EmbedBuilder()
+      .setColor('#dc2626')
+      .setTitle('📤 AÇO RETIRADO COM SUCESSO')
+      .addFields(
+        { name: '📉 Quantidade', value: `${formatarNumero(quantidade)} kg`, inline: true },
+        { name: '👤 Retirado por', value: `<@${message.author.id}>`, inline: true },
+        { name: '📦 Estoque Restante', value: `${formatarNumero(db.estoque)} kg`, inline: true },
+        { name: '📋 Motivo do Saque', value: motivo, inline: false }
+      )
+      .setTimestamp();
+
+    await message.reply({ embeds: [embed] });
+    await atualizarPainel(message.guild);
+  }
+
+  // COMANDO: !AVISOS <MENSAGEM>
+  if (command === 'avisos') {
+    const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
+    const temPermissao = message.member && (
+      message.member.permissions.has(PermissionFlagsBits.Administrator) || 
+      message.member.roles.cache.has(cargoGerenteId)
+    );
+
+    if (!temPermissao) {
+      return message.reply('❌ **Acesso Negado:** Apenas gerentes ou administradores podem emitir comunicados oficiais.')
         .then(msg => setTimeout(() => msg.delete().catch(() => null), 6000));
     }
 
@@ -395,7 +462,7 @@ client.on('messageCreate', async (message) => {
       || await message.guild.channels.fetch(canalAvisosId).catch(() => null);
 
     if (!canalAvisos) {
-      return message.reply(`❌ **Canal de avisos não encontrado!** Verifique se o ID \`${canalAvisosId}\` está correto.`);
+      return message.reply(`❌ **Canal de avisos não encontrado!** Verifique o ID configurado.`);
     }
 
     const embedAviso = new EmbedBuilder()
@@ -413,12 +480,11 @@ client.on('messageCreate', async (message) => {
       embeds: [embedAviso]
     });
 
-    await message.reply(`✅ **Aviso enviado com sucesso** no canal de texto <#${canalAvisosId}>!`);
+    await message.reply(`✅ **Aviso enviado com sucesso** no canal <#${canalAvisosId}>!`);
   }
 
-  // COMANDO: !PAINEL (Para gerar ou resetar o painel central)
+  // COMANDO: !PAINEL
   if (command === 'painel') {
-    // PROTEÇÃO: Apenas administradores ou cargo gerente podem gerar o painel
     const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
     const temPermissao = message.member && (
       message.member.permissions.has(PermissionFlagsBits.Administrator) || 
@@ -433,19 +499,18 @@ client.on('messageCreate', async (message) => {
     await message.delete().catch(() => null);
 
     db.painelCanalId = message.channel.id;
-    db.painelMensagemId = null; // Forçar criação de nova mensagem
+    db.painelMensagemId = null; 
     salvarBanco();
 
     await atualizarPainel(message.guild);
     
-    // Envia um aviso rápido de confirmação
     const tempMsg = await message.channel.send('✅ **Painel operacional centralizado gerado com sucesso neste canal!**');
     setTimeout(() => tempMsg.delete().catch(() => null), 5000);
   }
 });
 
 // ==========================================
-// 2. EVENTO: INTERAÇÃO DE BOTÕES / MODAIS
+// EVENTO: INTERAÇÃO DE BOTÕES / MODAIS
 // ==========================================
 client.on('interactionCreate', async (interaction) => {
   const { user, guild } = interaction;
@@ -482,7 +547,7 @@ client.on('interactionCreate', async (interaction) => {
       const inputArma = new TextInputBuilder()
         .setCustomId('arma_id')
         .setLabel('ID do Equipamento (Ex: ak47, awp, m16)')
-        .setPlaceholder('Consulte os IDs na tabela')
+        .setPlaceholder('Consulte os IDs clicando em Tabela de Preços')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
@@ -500,7 +565,48 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.showModal(modal);
     }
 
-    // BOTÃO: MEU PERFIL (RESPOSTA ULTRA RÁPIDA)
+    // BOTÃO: RETIRAR AÇO (RESTRITO A GERENTE)
+    if (interaction.customId === 'btn_retirar_aco') {
+      const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
+      const temPermissao = interaction.member && (
+        interaction.member.permissions.has(PermissionFlagsBits.Administrator) || 
+        interaction.member.roles.cache.has(cargoGerenteId)
+      );
+
+      if (!temPermissao) {
+        return interaction.reply({ 
+          content: '❌ **Acesso Negado:** Apenas Gerentes autorizados têm permissão para retirar aço.', 
+          ephemeral: true 
+        });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('modal_retirar_aco')
+        .setTitle('📤 Retirada de Aço — Hunters');
+
+      const inputQtd = new TextInputBuilder()
+        .setCustomId('retirar_qtd')
+        .setLabel('Quantidade de Aço a retirar (kg)')
+        .setPlaceholder('Ex: 5000')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const inputMotivo = new TextInputBuilder()
+        .setCustomId('retirar_motivo')
+        .setLabel('Motivo do Saque')
+        .setPlaceholder('Ex: Produção de fuzis e kits de blindagem')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(inputQtd),
+        new ActionRowBuilder().addComponents(inputMotivo)
+      );
+
+      await interaction.showModal(modal);
+    }
+
+    // BOTÃO: MEU PERFIL
     if (interaction.customId === 'btn_perfil') {
       const totalFarmado = obterAcoTotalMembro(user.id);
       const meta = db.config.META_ACO_KG || 8000;
@@ -522,7 +628,7 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embedPerfil], ephemeral: true });
     }
 
-    // BOTÃO: TABELA DE PREÇOS (RESPOSTA INSTANTÂNEA!)
+    // BOTÃO: TABELA DE PREÇOS
     if (interaction.customId === 'btn_arsenal') {
       const embedArsenal = new EmbedBuilder()
         .setTitle('🔫 TABELA DE PREÇOS E REQUISITOS - ARSENAL')
@@ -532,15 +638,14 @@ client.on('interactionCreate', async (interaction) => {
       let listaItens = "";
       Object.keys(ARMAS).forEach((key) => {
         const item = ARMAS[key];
-        listaItens += `🔑 Code: \`${key}\` | **${item.nome}**\n💵 Preço: \`${formatarMoeda(item.preco)}\` | ⛓️ Aço Consumido: \`${formatarNumero(item.aco)} kg\`\n\n`;
+        listaItens += `🔑 Code: \`${key}\` | **${item.nome}**\n💵 Preço: \`${formatarMoeda(item.preco)}\` | ⛓️ Aço: \`${formatarNumero(item.aco)} kg\`\n\n`;
       });
 
-      embedArsenal.addFields({ name: 'Lista de Equipamentos Cadastrados', value: listaItens });
-      
+      embedArsenal.addFields({ name: 'Equipamentos e Insumos Disponíveis', value: listaItens });
       return interaction.reply({ embeds: [embedArsenal], ephemeral: true });
     }
 
-    // BOTÃO: RANKING DE FARME (RESPOSTA ULTRA RÁPIDA)
+    // BOTÃO: RANKING DE FARME
     if (interaction.customId === 'btn_ranking') {
       const totais = {};
       db.farmes.forEach(f => {
@@ -570,7 +675,7 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ embeds: [embedRank], ephemeral: true });
     }
 
-    // BOTÃO: PAINEL GERENTE (RESTRITO AO ID DO CARGO E ADMINS)
+    // BOTÃO: PAINEL GERENTE
     if (interaction.customId === 'btn_admin') {
       const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
       const temPermissao = interaction.member && (
@@ -580,7 +685,7 @@ client.on('interactionCreate', async (interaction) => {
 
       if (!temPermissao) {
         return interaction.reply({ 
-          content: `❌ **Acesso Negado:** Apenas administradores ou membros autorizados com o cargo de **Gerente** (<@&${cargoGerenteId}>) podem abrir as configurações do painel.`, 
+          content: `❌ **Acesso Negado:** Apenas administradores ou membros autorizados com o cargo de **Gerente** (<@&${cargoGerenteId}>) podem alterar as configurações.`, 
           ephemeral: true 
         });
       }
@@ -664,7 +769,7 @@ client.on('interactionCreate', async (interaction) => {
       const qtd = parseInt(interaction.fields.getTextInputValue('qtd_venda'));
 
       if (!ARMAS[armaId]) {
-        return interaction.editReply({ content: `❌ **ID do item inválido!** IDs válidos: \`ak47\`, \`awp\`, \`m16\`, \`sawnoff\`, etc.` });
+        return interaction.editReply({ content: `❌ **ID do item inválido!** Abra a Tabela de Preços para ver a lista de IDs válidos.` });
       }
 
       if (isNaN(qtd) || qtd <= 0) {
@@ -736,14 +841,82 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.editReply({ content: '⚙️ **Configurações atualizadas com sucesso!** O painel do Discord foi sincronizado.' });
       await atualizarPainel(guild);
     }
+
+    // MODAL: RETIRAR AÇO (GERENTE)
+    if (interaction.customId === 'modal_retirar_aco') {
+      await interaction.deferReply({ ephemeral: true });
+      const qtd = parseInt(interaction.fields.getTextInputValue('retirar_qtd'));
+      const motivo = interaction.fields.getTextInputValue('retirar_motivo');
+
+      const cargoGerenteId = db.config.CARGO_GERENTE_ID || '1523277774436171796';
+      const temPermissao = interaction.member && (
+        interaction.member.permissions.has(PermissionFlagsBits.Administrator) || 
+        interaction.member.roles.cache.has(cargoGerenteId)
+      );
+
+      if (!temPermissao) {
+        return interaction.editReply({ content: '❌ **Acesso Negado:** Sem privilégios de Gerente.' });
+      }
+
+      if (isNaN(qtd) || qtd <= 0) {
+        return interaction.editReply({ content: '❌ **Quantidade Inválida:** Digite um valor inteiro positivo.' });
+      }
+
+      if (db.estoque < qtd) {
+        return interaction.editReply({ content: `❌ **Estoque Insuficiente:** Tentativa de retirar ${formatarNumero(qtd)} kg, mas restam apenas ${formatarNumero(db.estoque)} kg.` });
+      }
+
+      // Executar retirada
+      db.estoque -= qtd;
+      recalcularEstoqueDividido();
+
+      if (!db.retiradas) db.retiradas = [];
+      
+      const novaRetirada = {
+        id: `ret_${Date.now()}`,
+        userId: user.id,
+        userName: user.username,
+        quantidade: qtd,
+        motivo: motivo.trim(),
+        timestamp: new Date().toISOString()
+      };
+      
+      db.retiradas.push(novaRetirada);
+      salvarBanco();
+
+      await interaction.editReply({ 
+        content: `✅ **Retirada Efetuada!** Foram retirados **${formatarNumero(qtd)} kg** de aço para: *"${motivo}"*.` 
+      });
+
+      // Envia log detalhado ao canal de avisos
+      const canalAvisosId = db.config.CANAL_AVISOS_ID;
+      const canalAvisos = guild.channels.cache.get(canalAvisosId)
+        || await guild.channels.fetch(canalAvisosId).catch(() => null);
+
+      if (canalAvisos) {
+        const embedRetiradaLog = new EmbedBuilder()
+          .setTitle('📤 AÇO RETIRADO DO COFRE OPERACIONAL')
+          .setColor('#ef4444')
+          .setDescription(`👤 **Gerente:** <@${user.id}> (${user.username})\n📉 **Quantidade:** **${formatarNumero(qtd)} kg**\n📋 **Motivo:** _${motivo}_`)
+          .addFields(
+            { name: '📦 Estoque Restante', value: `**${formatarNumero(db.estoque)} kg**`, inline: true }
+          )
+          .setFooter({ text: 'Hunters ERP • Auditoria Operacional' })
+          .setTimestamp();
+
+        await canalAvisos.send({ embeds: [embedRetiradaLog] }).catch(() => null);
+      }
+
+      await atualizarPainel(guild);
+    }
   }
 });
 
-// INICIALIZANDO CONEXÃO COM O BOT TOKEN
+// CONEXÃO COM O BOT TOKEN
 if (process.env.DISCORD_TOKEN) {
   client.login(process.env.DISCORD_TOKEN).catch(err => {
-    console.error("❌ [HUNTERS] Falha crítica de conexão. Verifique o DISCORD_TOKEN no seu arquivo .env!", err.message);
+    console.error("❌ [HUNTERS] Falha crítica de conexão. Verifique o DISCORD_TOKEN!", err.message);
   });
 } else {
-  console.error("❌ [HUNTERS] Erro: DISCORD_TOKEN não configurado nas variáveis de ambiente!");
+  console.error("❌ [HUNTERS] Erro: DISCORD_TOKEN não configurado!");
 }
