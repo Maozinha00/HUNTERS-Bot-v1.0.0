@@ -43,7 +43,8 @@ const CONFIG = {
   CANAL_AVISOS_ID: '1515125864033943712',
   CARGO_NOTIFICAR_ID: '1515125826780135485',
   CANAL_PAINEL_ID: '1523844178151473193',
-  CANAL_LOG_METAS_ID: '1525698045537161226', // Canal específico de logs de metas entregues
+  CANAL_TABELA_PRECOS_ID: '1523478101940506744', // Canal exclusivo para tabela de preços
+  CANAL_LOG_METAS_ID: '1525698045537161226', // Canal de logs de metas entregues
   CARGO_GERENTE_ID: '1523277774436171796',   // ID do cargo de gerente autorizado
   META_ACO_KG: 8000,
   CUSTO_KIT_KG: 3260,
@@ -95,7 +96,8 @@ let db = {
   retiradas: [],
   config: { ...CONFIG },
   painelCanalId: null,
-  painelMensagemId: null
+  painelMensagemId: null,
+  tabelaMensagemId: null
 };
 
 // Carregar dados salvos se existirem
@@ -125,12 +127,12 @@ function salvarBanco() {
   }
 }
 
-// INICIALIZANDO CLIENT DO DISCORD WITH INTENTS
+// INICIALIZANDO CLIENT DO DISCORD COM INTENTS REQUISITADOS
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // <-- NECESSÁRIO para comandos prefixados como !painel
+    GatewayIntentBits.MessageContent, // <-- NECESSÁRIO para comandos prefixados
     GatewayIntentBits.GuildMembers
   ]
 });
@@ -188,7 +190,7 @@ async function verificarMetaAtingida(userId, userName, totalAcoAnterior, totalAc
       }).catch(() => null);
     }
 
-    // 📜 2. Log de Meta Entregue no canal de log solicitado
+    // 📜 2. Log de Meta Entregue e Aprovada no canal de log solicitado: 1525698045537161226
     const canalLogId = db.config.CANAL_LOG_METAS_ID || '1525698045537161226';
     const canalLog = guild.channels.cache.get(canalLogId)
       || await guild.channels.fetch(canalLogId).catch(() => null);
@@ -301,7 +303,7 @@ function obterPainelPayload() {
     .setFooter({ text: 'Hunters ERP • Painel Operacional Central' })
     .setTimestamp();
 
-  // Botões principais incluídos no Painel central
+  // v4.2: Botão vermelho "Retirar Aço 📤" incluído na linha de ações operacionais
   const rowAcoes = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('btn_farme').setLabel('Entregar Farme').setStyle(ButtonStyle.Success).setEmoji('📦'),
     new ButtonBuilder().setCustomId('btn_venda').setLabel('Registrar Venda').setStyle(ButtonStyle.Primary).setEmoji('💰'),
@@ -345,7 +347,7 @@ async function atualizarPainel(guild) {
           return;
         }
       } catch (e) {
-        // Ignora e cria nova caso a mensagem antiga tenha sido excluída
+        // Ignora e cria nova
       }
     }
 
@@ -360,7 +362,61 @@ async function atualizarPainel(guild) {
   }
 }
 
-// EVENTO: BOT ONLINE
+// ATUALIZAÇÃO DA TABELA DE PREÇOS NO CANAL EXCLUSIVO
+async function atualizarTabelaPrecos(guild) {
+  try {
+    const canalId = db.config.CANAL_TABELA_PRECOS_ID || '1523478101940506744';
+    const canal = guild.channels.cache.get(canalId) 
+      || await guild.channels.fetch(canalId).catch(() => null);
+
+    if (!canal) {
+      console.log(`⚠️ [HUNTERS] Canal de Tabela de Preços (${canalId}) não encontrado.`);
+      return;
+    }
+
+    const content = `# 🛒 TABELA DE ITENS
+
+🔫 **AK-47** — 🛠️ 2700 Aços
+🎯 **AWP** — 🛠️ 3000 Aços
+
+📦 **Box .308** — 🛠️ 200 Aços
+📦 **Box 5.56** — 🛠️ 120 Aços
+📦 **Box Escopeta** — 🛠️ 100 Aços
+📦 **Box Pistola** — 🛠️ 40 Aços
+📦 **Box Submetralhadora** — 🛠️ 80 Aços
+
+🔩 **Carregador Estendido** — 🛠️ 25 Aços
+🔫 **Glock 17** — 🛠️ 120 Aços
+🔦 **Grip** — 🛠️ 30 Aços
+🔫 **M16** — 🛠️ 2700 Aços
+🔫 **Sawed-Off Shotgun** — 🛠️ 1200 Aços
+🤫 **Silenciador** — 🛠️ 20 Aços
+⚡ **Taser** — 🛠️ 700 Aços
+🔫 **TEC-9** — 🛠️ 900 Aços
+🔦 **Lanterna** — 🛠️ 30 Aços`;
+
+    if (db.tabelaMensagemId) {
+      try {
+        const msg = await canal.messages.fetch(db.tabelaMensagemId);
+        if (msg) {
+          await msg.edit({ content });
+          return;
+        }
+      } catch (e) {
+        // Ignora e cria nova
+      }
+    }
+
+    const novaMsg = await canal.send({ content });
+    db.tabelaMensagemId = novaMsg.id;
+    salvarBanco();
+    console.log('✅ [HUNTERS] Tabela de preços enviada e registrada!');
+  } catch (err) {
+    console.error('❌ [HUNTERS] Erro ao atualizar tabela de preços:', err.message);
+  }
+}
+
+// EVENTO: BOT PRONTO
 client.once('ready', async () => {
   console.log(`🤖 [HUNTERS] Bot online como ${client.user.tag}!`);
   carregarBanco();
@@ -370,6 +426,7 @@ client.once('ready', async () => {
 
   client.guilds.cache.forEach(async (guild) => {
     await atualizarPainel(guild);
+    await atualizarTabelaPrecos(guild);
   });
 });
 
@@ -635,13 +692,27 @@ client.on('interactionCreate', async (interaction) => {
         .setColor('#a855f7')
         .setDescription('Consulte os códigos e preços oficiais para registro do seu arsenal:');
 
-      let listaItens = "";
+      let armasTxt = "";
+      let caixasTxt = "";
+      let municoesTxt = "";
+
       Object.keys(ARMAS).forEach((key) => {
         const item = ARMAS[key];
-        listaItens += `🔑 Code: \`${key}\` | **${item.nome}**\n💵 Preço: \`${formatarMoeda(item.preco)}\` | ⛓️ Aço: \`${formatarNumero(item.aco)} kg\`\n\n`;
+        const line = `• \`${key}\` | **${item.nome}**\n  ↳ 💵 \`${formatarMoeda(item.preco)}\` | 🛠️ \`${formatarNumero(item.aco)} kg\`\n`;
+        if (key.startsWith("box_")) {
+          caixasTxt += line;
+        } else if (key.startsWith("muni_")) {
+          municoesTxt += line;
+        } else {
+          armasTxt += line;
+        }
       });
 
-      embedArsenal.addFields({ name: 'Equipamentos e Insumos Disponíveis', value: listaItens });
+      embedArsenal.addFields(
+        { name: '🔫 ARMAS & EQUIPAMENTOS', value: armasTxt || 'Nenhum' },
+        { name: '📦 CAIXAS DE MUNIÇÃO', value: caixasTxt || 'Nenhum' },
+        { name: '🪦 MUNIÇÕES (CAIXA COM 10)', value: municoesTxt || 'Nenhum' }
+      );
       return interaction.reply({ embeds: [embedArsenal], ephemeral: true });
     }
 
