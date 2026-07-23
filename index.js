@@ -374,21 +374,28 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.deferReply({ ephemeral: true });
 
         const embedArsenal = new EmbedBuilder()
-          .setTitle('🛒 TABELA DE PREÇOS OFICIAL DO CLÃ HUNTERS')
+          .setTitle('🛒 TABELA OFICIAL DE VALORES DE PEÇAS & ARMAS (EM AÇO)')
           .setColor('#3b82f6')
           .setDescription(
             [
               '```',
-              `• AÇO FARMADO (kg): ...... R$ ${CONFIG.CUSTO_ACO_POR_KG.toFixed(2)} / kg`,
-              '• KIT COMPLETO GUERRA: ... R$ 8.000,00 (Split: 30% Clã / 70% Membro)',
-              '• FUZIL AK-47 / G3: ...... R$ 4.500,00',
-              '• COLETE BALÍSTICO L3: ... R$ 1.500,00',
-              '• CAIXA DE MUNIÇÃO: ...... R$ 800,00',
+              '• $750 kg Aço: M240',
+              '• $600 kg Aço: PKM',
+              '• $300 kg Aço: Bandoleira AK, Bipé/Cano/Coronha/Ferrolho/Tambor M240/PKM, Mola LMG',
+              '• $250 kg Aço: AK Draco',
+              '• $170 kg Aço: Cabo, Cano, Carregador, Gatilho CR-527',
+              '• $120 kg Aço: AK Draco (Apoio, Cano, Coronha, Punho)',
+              '• $100 kg Aço: Micro Uzi, MP5, Sawnoff Shotgun',
+              '• $80 kg Aço:  DB Shotgun',
+              '• $50 kg Aço:  Colt 1851 Navy, Colt M1878, Glock-17, Coronha/Trabuco',
+              '• $40 kg Aço:  Carregador, Cabo, Gatilho Tec SMG',
+              '• $30 kg Aço:  Makarov, Cano/Coronha/Ferrolho Shotgun',
+              '• $15 kg Aço:  Cabos, Canos, Tambores de Relíquias & Tec SMG',
               '```',
-              `*Nota: Em todas as vendas, ${CONFIG.SPLIT_CLAN_PERCENT}% do valor vai para o Banco do Clã e ${100 - CONFIG.SPLIT_CLAN_PERCENT}% vai para o vendedor.*`,
+              `*Nota: Em todas as vendas, ${CONFIG.SPLIT_CLAN_PERCENT}% do valor vai para o Banco do Clã e ${100 - CONFIG.SPLIT_CLAN_PERCENT}% vai para o vendedor (Custo Aço R$ ${CONFIG.CUSTO_ACO_POR_KG.toFixed(2)}/kg).*`,
             ].join('\n')
           )
-          .setFooter({ text: 'Hunters ERP • Tabela Tática' });
+          .setFooter({ text: 'Hunters ERP • Tabela Tática de Peças em Aço' });
 
         return await interaction.editReply({ embeds: [embedArsenal] });
       }
