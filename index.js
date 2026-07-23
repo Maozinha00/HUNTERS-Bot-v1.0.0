@@ -4,6 +4,7 @@
  * 🔧 CORREÇÃO DE BUGS APLICADA:
  * - Todos os 7 botões do painel agora possuem modais e respostas instantâneas (<3s).
  * - Corrigido o erro "HUNTERS Bot não respondeu a tempo".
+ * - Tratamento de tipos numéricos para evitar SyntaxError em valores do banco.
  * 
  * Requisitos:
  * npm install discord.js dotenv
@@ -45,7 +46,7 @@ const CONFIG = {
 const DB_FILE = './hunters-db.json';
 
 let db = {
-  bancoDinheiro:  1.090.400,00,
+  bancoDinheiro:   109040000,
   estoque: {
     acoBau: 69000,
     acoMaoTotal: 12500,
@@ -60,10 +61,31 @@ let db = {
   painelMensagemId: null
 };
 
+function sanitizarNumero(val, defaultVal = 0) {
+  if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+  if (typeof val === 'string') {
+    const clean = val.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+    const num = parseFloat(clean);
+    return isNaN(num) ? defaultVal : num;
+  }
+  return defaultVal;
+}
+
 function carregarBanco() {
   if (fs.existsSync(DB_FILE)) {
     try {
-      db = { ...db, ...JSON.parse(fs.readFileSync(DB_FILE, 'utf-8')) };
+      const rawData = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      if (rawData) {
+        if (rawData.bancoDinheiro !== undefined) {
+          rawData.bancoDinheiro = sanitizarNumero(rawData.bancoDinheiro, 868392);
+        }
+        if (rawData.estoque) {
+          rawData.estoque.acoBau = sanitizarNumero(rawData.estoque.acoBau, 69000);
+          rawData.estoque.acoMaoTotal = sanitizarNumero(rawData.estoque.acoMaoTotal, 12500);
+          rawData.estoque.kitsMontados = sanitizarNumero(rawData.estoque.kitsMontados, 8);
+        }
+        db = { ...db, ...rawData };
+      }
       console.log('📂 Banco de dados local carregado com sucesso!');
     } catch (e) {
       console.error('Erro ao ler hunters-db.json:', e);
