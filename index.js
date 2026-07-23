@@ -142,19 +142,21 @@ async function atualizarPainel(guild) {
       .setTitle('🐺 HUNTERS LOGÍSTICA & CONTROLE TÁTICO DE ESTOQUE')
       .setColor('#a855f7')
       .setDescription(
-        ```
-╔═══════════════════════════════════════════════════════════════╗
-║ 🐺 HUNTERS ERP - PAINEL TÁTICO CENTRAL DE ESTOQUE & DADOS ║
-╚═══════════════════════════════════════════════════════════════╝
-💵 BANCO DE DINHEIRO: ......... ${formatarMoeda(db.bancoDinheiro)}
-📦 AÇO NO BAÚ (COFRE): ........ ${formatarNumero(db.estoque.acoBau)} kg
-✋ AÇO NA MÃO (MEMBROS): ....... ${formatarNumero(db.estoque.acoMaoTotal)} kg
-🔥 KITS MONTADOS PRONTOS: ...... ${db.estoque.kitsMontados} Kits Completos
-📈 FATURAMENTO BRUTO: .......... ${formatarMoeda(totalVendidoBruto)}
-🟢 LUCRO LÍQUIDO DO CLÃ: ....... ${formatarMoeda(totalLucroLiquido)}
-🌾 TOTAL DE AÇO FARMADO: ....... ${formatarNumero(totalFarmado)} kg
-🎯 META SEMANAL POR MEMBRO: .... ${formatarNumero(CONFIG.META_ACO_KG)} kg
-````
+        [
+          '```',
+          '╔═══════════════════════════════════════════════════════════════╗',
+          '║ 🐺 HUNTERS ERP - PAINEL TÁTICO CENTRAL DE ESTOQUE & DADOS ║',
+          '╚═══════════════════════════════════════════════════════════════╝',
+          `💵 BANCO DE DINHEIRO: ......... ${formatarMoeda(db.bancoDinheiro)}`,
+          `📦 AÇO NO BAÚ (COFRE): ........ ${formatarNumero(db.estoque.acoBau)} kg`,
+          `✋ AÇO NA MÃO (MEMBROS): ....... ${formatarNumero(db.estoque.acoMaoTotal)} kg`,
+          `🔥 KITS MONTADOS PRONTOS: ...... ${db.estoque.kitsMontados} Kits Completos`,
+          `📈 FATURAMENTO BRUTO: .......... ${formatarMoeda(totalVendidoBruto)}`,
+          `🟢 LUCRO LÍQUIDO DO CLÃ: ....... ${formatarMoeda(totalLucroLiquido)}`,
+          `🌾 TOTAL DE AÇO FARMADO: ....... ${formatarNumero(totalFarmado)} kg`,
+          `🎯 META SEMANAL POR MEMBRO: .... ${formatarNumero(CONFIG.META_ACO_KG)} kg`,
+          '```'
+        ].join('\n')
       )
       .setFooter({ text: 'Hunters ERP • Sorte aos Fortes 🐺' })
       .setTimestamp();
@@ -375,14 +377,16 @@ client.on('interactionCreate', async (interaction) => {
           .setTitle('🛒 TABELA DE PREÇOS OFICIAL DO CLÃ HUNTERS')
           .setColor('#3b82f6')
           .setDescription(
-            ```
-• AÇO FARMADO (kg): ...... R$ ${CONFIG.CUSTO_ACO_POR_KG.toFixed(2)} / kg
-• KIT COMPLETO GUERRA: ... R$ 8.000,00 (Split: 30% Clã / 70% Membro)
-• FUZIL AK-47 / G3: ...... R$ 4.500,00
-• COLETE BALÍSTICO L3: ... R$ 1.500,00
-• CAIXA DE MUNIÇÃO: ...... R$ 800,00
-```
-*Nota: Em todas as vendas, ${CONFIG.SPLIT_CLAN_PERCENT}% do valor vai para o Banco do Clã e ${100 - CONFIG.SPLIT_CLAN_PERCENT}% vai para o vendedor.*`
+            [
+              '```',
+              `• AÇO FARMADO (kg): ...... R$ ${CONFIG.CUSTO_ACO_POR_KG.toFixed(2)} / kg`,
+              '• KIT COMPLETO GUERRA: ... R$ 8.000,00 (Split: 30% Clã / 70% Membro)',
+              '• FUZIL AK-47 / G3: ...... R$ 4.500,00',
+              '• COLETE BALÍSTICO L3: ... R$ 1.500,00',
+              '• CAIXA DE MUNIÇÃO: ...... R$ 800,00',
+              '```',
+              `*Nota: Em todas as vendas, ${CONFIG.SPLIT_CLAN_PERCENT}% do valor vai para o Banco do Clã e ${100 - CONFIG.SPLIT_CLAN_PERCENT}% vai para o vendedor.*`,
+            ].join('\n')
           )
           .setFooter({ text: 'Hunters ERP • Tabela Tática' });
 
