@@ -1,0 +1,177 @@
+{
+  "bancoDinheiro": 868392,
+  "estoque": {
+    "acoBau": 69000,
+    "acoMaoTotal": 12500,
+    "kitsMontados": 8
+  },
+  "config": {
+    "prefix": "!",
+    "canalRegrasId": "1522910276268069025",
+    "canalLogMetasId": "1525698045537161226",
+    "canalPainelId": "1523844178151473193",
+    "cargoRecrutaId": "1515125826780135485",
+    "cargoGerenteId": "1523277774436171796",
+    "metaAcoKg": 8000,
+    "custoAcoPorKg": 4.5,
+    "splitClanPercent": 30
+  },
+  "membros": [
+    {
+      "id": "1001",
+      "discordTag": "hunter_alpha#0001",
+      "displayName": "Alpha (Líder)",
+      "role": "Líder",
+      "acoFarmadoSemana": 12500,
+      "vendasRealizadas": 45000,
+      "aceitouRegras": true,
+      "dataIngresso": "2026-01-10"
+    },
+    {
+      "id": "1002",
+      "discordTag": "gerente_ghost#0002",
+      "displayName": "Ghost (Gerente)",
+      "role": "Gerente",
+      "acoFarmadoSemana": 9200,
+      "vendasRealizadas": 32000,
+      "aceitouRegras": true,
+      "dataIngresso": "2026-02-01"
+    },
+    {
+      "id": "1003",
+      "discordTag": "shadow_hunter#0003",
+      "displayName": "Shadow",
+      "role": "Membro",
+      "acoFarmadoSemana": 8100,
+      "vendasRealizadas": 18500,
+      "aceitouRegras": true,
+      "dataIngresso": "2026-03-15"
+    },
+    {
+      "id": "1004",
+      "discordTag": "viper_hunter#0004",
+      "displayName": "Viper",
+      "role": "Membro",
+      "acoFarmadoSemana": 6400,
+      "vendasRealizadas": 12000,
+      "aceitouRegras": true,
+      "dataIngresso": "2026-04-02"
+    },
+    {
+      "id": "1005",
+      "discordTag": "rookie_wolf#0005",
+      "displayName": "Rookie (Novo)",
+      "role": "Recruta",
+      "acoFarmadoSemana": 2500,
+      "vendasRealizadas": 0,
+      "aceitouRegras": true,
+      "dataIngresso": "2026-07-20"
+    }
+  ],
+  "farmes": [
+    {
+      "id": "farm-1",
+      "memberId": "1001",
+      "memberName": "Alpha (Líder)",
+      "quantidade": 5000,
+      "destino": "bau",
+      "data": "2026-07-21 14:30",
+      "timestamp": 1784698225222
+    },
+    {
+      "id": "farm-2",
+      "memberId": "1003",
+      "memberName": "Shadow",
+      "quantidade": 3500,
+      "destino": "bau",
+      "data": "2026-07-22 10:15",
+      "timestamp": 1784741425222
+    }
+  ],
+  "vendas": [
+    {
+      "id": "venda-1",
+      "memberId": "1002",
+      "memberName": "Ghost (Gerente)",
+      "item": "Kit Tático de Guerra (AK-47 + Coletes + Munição)",
+      "quantidade": 2,
+      "valorTotalBruto": 16000,
+      "lucroLiquidoClan": 4800,
+      "lucroMembro": 11200,
+      "data": "2026-07-21 18:00",
+      "timestamp": 1784712625222
+    }
+  ],
+  "retiradas": [
+    {
+      "id": "ret-1",
+      "memberId": "1001",
+      "memberName": "Alpha (Líder)",
+      "quantidade": 2000,
+      "motivo": "Ação de Dominação de Território",
+      "data": "2026-07-22 09:00",
+      "timestamp": 1784734625222
+    }
+  ],
+  "catalogo": [
+    {
+      "id": "cat-1",
+      "nome": "Aço Farmado (kg)",
+      "categoria": "Insumo",
+      "precoSugerido": 4.5,
+      "splitClan": 30,
+      "splitMembro": 70,
+      "unidade": "kg"
+    },
+    {
+      "id": "cat-2",
+      "nome": "Kit Completo de Guerra",
+      "categoria": "Utilitário",
+      "precoSugerido": 8000,
+      "splitClan": 30,
+      "splitMembro": 70,
+      "unidade": "Un"
+    },
+    {
+      "id": "cat-3",
+      "nome": "Colete Balístico Pesado Level 3",
+      "categoria": "Proteção",
+      "precoSugerido": 1500,
+      "splitClan": 30,
+      "splitMembro": 70,
+      "unidade": "Un"
+    },
+    {
+      "id": "cat-4",
+      "nome": "Fuzil AK-47 / G3 Tático",
+      "categoria": "Armamento",
+      "precoSugerido": 4500,
+      "splitClan": 30,
+      "splitMembro": 70,
+      "unidade": "Un"
+    },
+    {
+      "id": "cat-5",
+      "nome": "Munição 9mm / 7.62 (Caixa 250un)",
+      "categoria": "Armamento",
+      "precoSugerido": 800,
+      "splitClan": 30,
+      "splitMembro": 70,
+      "unidade": "Caixa"
+    }
+  ],
+  "logs": [
+    {
+      "id": "log-0",
+      "tipo": "admin",
+      "titulo": "⚙️ SISTEMA HUNTERS ERP REINICIALIZADO",
+      "descricao": "Banco de dados tático e métricas carregadas no sistema.",
+      "autor": "Hunters ERP Bot",
+      "cor": "#a855f7",
+      "data": "2026-07-22 22:00",
+      "timestamp": 1784784625222
+    }
+  ],
+  "painelCanalId": "1523844178151473193",
+  "painelMensagemId": "1234567890987654321"
+}
