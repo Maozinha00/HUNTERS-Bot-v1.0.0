@@ -46,7 +46,7 @@ const CONFIG = {
 const DB_FILE = './hunters-db.json';
 
 let db = {
-  bancoDinheiro:   109040000,
+  bancoDinheiro: 868392,
   estoque: {
     acoBau: 69000,
     acoMaoTotal: 12500,
@@ -104,10 +104,10 @@ function salvarBanco() {
 }
 
 const formatarMoeda = (val) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sanitizarNumero(val, 0));
 
 const formatarNumero = (val) =>
-  new Intl.NumberFormat('pt-BR').format(val || 0);
+  new Intl.NumberFormat('pt-BR').format(sanitizarNumero(val, 0));
 
 // CLIENTE DISCORD
 const client = new Client({
@@ -536,7 +536,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'modal_farme') {
         await interaction.deferReply({ ephemeral: true });
 
-        const qtd = parseInt(interaction.fields.getTextInputValue('farme_qtd')) || 0;
+        const qtd = sanitizarNumero(interaction.fields.getTextInputValue('farme_qtd'), 0);
         const destino = interaction.fields.getTextInputValue('farme_destino').toLowerCase() === 'mao' ? 'mao' : 'bau';
 
         if (qtd <= 0) {
@@ -585,7 +585,7 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.deferReply({ ephemeral: true });
 
         const item = interaction.fields.getTextInputValue('venda_item') || 'Item Geral';
-        const valorBruto = parseFloat(interaction.fields.getTextInputValue('venda_valor')) || 0;
+        const valorBruto = sanitizarNumero(interaction.fields.getTextInputValue('venda_valor'), 0);
 
         if (valorBruto <= 0) {
           return await interaction.editReply({ content: '❌ Valor de venda inválido!' });
@@ -635,7 +635,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'modal_retirar') {
         await interaction.deferReply({ ephemeral: true });
 
-        const qtd = parseInt(interaction.fields.getTextInputValue('retirar_qtd')) || 0;
+        const qtd = sanitizarNumero(interaction.fields.getTextInputValue('retirar_qtd'), 0);
         const motivo = interaction.fields.getTextInputValue('retirar_motivo') || 'Sem motivo';
 
         if (qtd <= 0 || qtd > db.estoque.acoBau) {
@@ -685,10 +685,10 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.deferReply({ ephemeral: true });
 
-        db.bancoDinheiro = parseFloat(interaction.fields.getTextInputValue('admin_banco')) || db.bancoDinheiro;
-        db.estoque.acoBau = parseInt(interaction.fields.getTextInputValue('admin_acobau')) || db.estoque.acoBau;
-        db.estoque.acoMaoTotal = parseInt(interaction.fields.getTextInputValue('admin_acomao')) || db.estoque.acoMaoTotal;
-        db.estoque.kitsMontados = parseInt(interaction.fields.getTextInputValue('admin_kits')) || db.estoque.kitsMontados;
+        db.bancoDinheiro = sanitizarNumero(interaction.fields.getTextInputValue('admin_banco'), db.bancoDinheiro);
+        db.estoque.acoBau = sanitizarNumero(interaction.fields.getTextInputValue('admin_acobau'), db.estoque.acoBau);
+        db.estoque.acoMaoTotal = sanitizarNumero(interaction.fields.getTextInputValue('admin_acomao'), db.estoque.acoMaoTotal);
+        db.estoque.kitsMontados = sanitizarNumero(interaction.fields.getTextInputValue('admin_kits'), db.estoque.kitsMontados);
 
         salvarBanco();
         await interaction.editReply({ content: '⚙️ **Alterações Gerenciais Salvas com Sucesso!**' });
@@ -711,11 +711,19 @@ client.on('interactionCreate', async (interaction) => {
     }
   } catch (error) {
     console.error('Erro na execução da interação:', error);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        content: '⚠️ **Ocorreu um erro ao processar esta ação! Tente novamente.**',
-        ephemeral: true
-      }).catch(() => null);
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+          content: '⚠️ **Ocorreu um erro ao processar esta ação! Tente novamente.**'
+        }).catch(() => null);
+      } else {
+        await interaction.reply({
+          content: '⚠️ **Ocorreu um erro ao processar esta ação! Tente novamente.**',
+          ephemeral: true
+        }).catch(() => null);
+      }
+    } catch (e) {
+      console.error('Erro ao responder falha de interação:', e);
     }
   }
 });
