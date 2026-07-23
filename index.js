@@ -45,7 +45,7 @@ const CONFIG = {
 const DB_FILE = './hunters-db.json';
 
 let db = {
-  bancoDinheiro: 868392.00,
+  bancoDinheiro:  1.090.400,00,
   estoque: {
     acoBau: 69000,
     acoMaoTotal: 12500,
@@ -373,31 +373,60 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'btn_arsenal') {
         await interaction.deferReply({ ephemeral: true });
 
-        const embedArsenal = new EmbedBuilder()
-          .setTitle('🛒 TABELA OFICIAL DE VALORES DE PEÇAS & ARMAS (EM AÇO)')
-          .setColor('#3b82f6')
+        const embedOficial = new EmbedBuilder()
+          .setTitle('🛒 TABELA OFICIAL DE ARMAMENTOS E MUNIÇÃO — HUNTERS')
+          .setColor('#a855f7')
           .setDescription(
             [
-              '```',
-              '• $750 kg Aço: M240',
-              '• $600 kg Aço: PKM',
-              '• $300 kg Aço: Bandoleira AK, Bipé/Cano/Coronha/Ferrolho/Tambor M240/PKM, Mola LMG',
-              '• $250 kg Aço: AK Draco',
-              '• $170 kg Aço: Cabo, Cano, Carregador, Gatilho CR-527',
-              '• $120 kg Aço: AK Draco (Apoio, Cano, Coronha, Punho)',
-              '• $100 kg Aço: Micro Uzi, MP5, Sawnoff Shotgun',
-              '• $80 kg Aço:  DB Shotgun',
-              '• $50 kg Aço:  Colt 1851 Navy, Colt M1878, Glock-17, Coronha/Trabuco',
-              '• $40 kg Aço:  Carregador, Cabo, Gatilho Tec SMG',
-              '• $30 kg Aço:  Makarov, Cano/Coronha/Ferrolho Shotgun',
-              '• $15 kg Aço:  Cabos, Canos, Tambores de Relíquias & Tec SMG',
-              '```',
-              `*Nota: Em todas as vendas, ${CONFIG.SPLIT_CLAN_PERCENT}% do valor vai para o Banco do Clã e ${100 - CONFIG.SPLIT_CLAN_PERCENT}% vai para o vendedor (Custo Aço R$ ${CONFIG.CUSTO_ACO_POR_KG.toFixed(2)}/kg).*`,
+              '\`\`\`yaml',
+              '=== ARMAS ===',
+              'AWP: ......... R$ 65.000',
+              'AK-47 / M16: .. R$ 35.000',
+              'SAWNOFF: ...... R$ 20.000',
+              'TEC-9: ........ R$ 15.000',
+              'TASER: ........ R$ 10.000',
+              'GLOCK 17: ..... R$  5.000',
+              '',
+              '=== ACESSÓRIOS ===',
+              'GRIP / CARREGADOR EST.: R$ 3.000',
+              'SILENCIADOR / LANTERNA: R$ 2.000',
+              '',
+              '=== CAIXAS DE MUNIÇÃO & 10x ===',
+              'BOX M. 5.56 / .308: .... R$ 5.000 | 10x Munição Fuzil: R$ 5.000',
+              'BOX M. ESCOPETA: ....... R$ 4.000 | 10x Munição Escopeta: R$ 4.000',
+              'BOX M. SUB: ............ R$ 3.000 | 10x Munição SMG: R$ 3.000',
+              'BOX M. PISTOLA: ........ R$ 2.000 | 10x Munição Pistola: R$ 2.000',
+              '\`\`\`',
+              '⚠️ *Desconto máximo permitido por clãs é de 15%!*',
+              '*Split: ' + config.splitClanPercent + '% Banco do Clã / ' + (100 - config.splitClanPercent) + '% Vendedor.*'
+            ].join('\n')
+          );
+
+        const embedDesmanche = new EmbedBuilder()
+          .setTitle('🔧 GUIA DE LOOT NO MAPA & RENDIMENTO DE DESMANCHE (AÇO KG)')
+          .setColor('#10b981')
+          .setDescription(
+            [
+              '\`\`\`yaml',
+              '• 750 kg Aço: M240',
+              '• 600 kg Aço: PKM',
+              '• 300 kg Aço: Bandoleira AK, Bipé/Cano/Coronha/Ferrolho/Tambor M240/PKM, Mola LMG',
+              '• 250 kg Aço: AK Draco',
+              '• 170 kg Aço: Cabo, Cano, Carregador, Gatilho CR-527',
+              '• 120 kg Aço: AK Draco (Apoio, Cano, Coronha, Punho)',
+              '• 100 kg Aço: Micro Uzi, MP5, Sawnoff Shotgun',
+              '•  80 kg Aço: DB Shotgun',
+              '•  50 kg Aço: Colt 1851 Navy, Colt M1878, Glock-17, Coronha/Trabuco',
+              '•  40 kg Aço: Carregador, Cabo, Gatilho Tec SMG',
+              '•  30 kg Aço: Makarov, Cano/Coronha/Ferrolho Shotgun',
+              '•  15 kg Aço: Cabos, Canos, Tambores de Relíquias & Tec SMG',
+              '\`\`\`',
+              '*Nota: Desmanche essas peças no mapa para obter Aço, entregue no /farme e contabilize no ranking da semana!*'
             ].join('\n')
           )
-          .setFooter({ text: 'Hunters ERP • Tabela Tática de Peças em Aço' });
+          .setFooter({ text: 'Hunters ERP • Tabela Tática Oficial' });
 
-        return await interaction.editReply({ embeds: [embedArsenal] });
+        return await interaction.editReply({ embeds: [embedOficial, embedDesmanche] });
       }
 
       // 7. RANKING (btn_ranking) -> RESPOSTA EPHEMERAL
